@@ -58,6 +58,21 @@ class LuaModTest(unittest.TestCase):
         end)()""")
         return json.loads(encoded)
 
+    def test_every_mod_lua_file_compiles(self):
+        # the GUI script cannot run outside the game, but a syntax error would break the whole mod
+        mod_root = MOD.parent
+        files = sorted(mod_root.rglob("*.lua"))
+        self.assertGreaterEqual(len(files), 10)
+        for f in files:
+            ok, err = self.lua.eval("function(src, name) local fn, e = load(src, name) return fn ~= nil, e end")(
+                f.read_text(encoding="utf-8"), f.name)
+            self.assertTrue(ok, f"{f.name}: {err}")
+
+    def test_content_list_matches_files(self):
+        listed = set(json.loads((MOD.parent.parent / "_content.json").read_text())["files"])
+        actual = {"line_doctor/" + f.name for f in MOD.iterdir()}
+        self.assertEqual(listed, actual)
+
     def test_json_encoder_edge_cases(self):
         out = self.lua.eval("""(function()
             local json = ug_require("olrick_line_doctor_1::/line_doctor/json.lua")
@@ -118,7 +133,8 @@ class LuaModTest(unittest.TestCase):
                 dofile("{lua_path(MOD / 'line_doctor.script.lua')}")
                 script = data()
             """)
-            other.globals().saved = other.table_from(dict(saved))
+            other.globals().saved = other.table_from(
+                {k: saved[k] for k in ("lastExport", "lastExportClock")})  # nested tables cannot cross runtimes
             other.execute("""
                 stateObj = { get = function() return saved end, set = function(_, v) saved = v end }
                 script.update({}, stateObj, 1)
@@ -192,6 +208,38 @@ class LuaModTest(unittest.TestCase):
         snap = analyze.extract_from_log(log_text)
         self.assertIsNotNone(snap)
         self.assertIn("restart", snap["ticketProbe"]["error"])
+
+    def test_pending_income_shares_by_segment_length(self):
+        # sim 9002: picked up at (0,0,0) by line 100, transferred at (300,400,0) to line 200,
+        # now in vehicle 22 at (900,1200,10), heading to construction 77 at (1500,2000,10)
+        res = json.loads(self.lua.eval("""(function()
+            local pending = ug_require("olrick_line_doctor_1::/line_doctor/pending.lua")
+            local json = ug_require("olrick_line_doctor_1::/line_doctor/json.lua")
+            return json.encode(pending.compute(api, {}, 0))
+        end)()"""))
+        import math
+        seg1 = 500.0
+        seg2 = math.sqrt(600**2 + 800**2 + 10**2) + 80          # climb of 10 m counts 8x
+        rest = 1000.0
+        price = 3.9 * (math.sqrt(1500**2 + 2000**2 + 10**2) + 80) * 0.804
+        total = seg1 + seg2 + rest
+        self.assertEqual(res["items"], 1)
+        self.assertAlmostEqual(res["lines"]["100"]["done"], price * seg1 / total, delta=0.01)  # json keeps 6 digits
+        self.assertAlmostEqual(res["lines"]["200"]["inProgress"], price * seg2 / total, delta=0.01)
+        self.assertEqual(res["lines"]["200"]["units"], 1)
+        self.assertEqual(res["lines"]["100"]["units"], 0)
+
+    def test_pending_learns_factor_from_deliveries(self):
+        f = self.lua.eval("""(function()
+            local pending = ug_require("olrick_line_doctor_1::/line_doctor/pending.lua")
+            local s = {}
+            pending.learnDelivery(s, { cargoType = 5, basePrice = 4000,
+                segments = { { pos = { 0, 0, 0 } } }, unloadPos = { 600, 800, 0 } })
+            pending.learnDelivery(s, { cargoType = 5, basePrice = 5000,
+                segments = { { pos = { 0, 0, 0 } } }, unloadPos = { 600, 800, 0 } })
+            return s.calib.types["5"].v
+        end)()""")
+        self.assertAlmostEqual(f, 4.0 + 0.1 * (5.0 - 4.0))  # first value, then moving average
 
     def test_log_fallback_is_parsed_by_analyzer(self):
         self.lua.execute(f"""

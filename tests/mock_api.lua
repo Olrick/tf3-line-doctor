@@ -8,7 +8,7 @@ local YEAR = 1461000 -- value observed in game
 local NUM_CARGO_TYPES = 37
 local NOW = 5 * YEAR
 
-local C = { LINE = 1, GAME_TIME = 2, TRANSPORT_VEHICLE = 3, ACCOUNT = 4, SIM_CARGO = 5, SIM_ENTITY_AT_VEHICLE = 6 }
+local C = { LINE = 1, GAME_TIME = 2, TRANSPORT_VEHICLE = 3, ACCOUNT = 4, SIM_CARGO = 5, SIM_ENTITY_AT_VEHICLE = 6, CONSTRUCTION = 7, SIM_ENTITY_AT_TERMINAL = 8 }
 
 -- a coal unit delivered by line 200 after a first leg on line 100 (sim 9002)
 local simCargo = {
@@ -56,7 +56,13 @@ local names = { [1001] = "Gare", [1002] = "Mairie", [2001] = "Mine", [2002] = "S
 for id, l in pairs(lines) do names[id] = l.name end
 for id in pairs(vehicles) do names[id] = "Vehicle " .. id end
 
+-- destination of sim 9002 (a construction): translation at transf[13..15]
+local constructions = {
+	[77] = { transf = { 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 1500, 2000, 10, 1 } },
+}
+
 local function component(e, t)
+	if t == C.CONSTRUCTION then return constructions[e] end
 	if t == C.SIM_CARGO then return simCargo[e] end
 	if t == C.SIM_ENTITY_AT_VEHICLE and simCargo[e] then return { line = 200, vehicle = 22 } end
 	if t == C.GAME_TIME and e == 1 then return { gameTime = NOW } end
@@ -115,6 +121,11 @@ return {
 	},
 	engine = {
 		getComponent = component,
+		getEntitiesWithComponent = function(t)
+			if t == C.SIM_CARGO then return { 9002 } end
+			return {}
+		end,
+		entityExists = function() return true end,
 		util = {
 			getPlayer = function() return 2 end,
 			getWorld = function() return 1 end,
@@ -160,6 +171,12 @@ return {
 			},
 		},
 		system = {
+			streetConnectorSystem = {
+				getConstructionEntityForIndustry = function() return -1 end,
+				getConstructionEntityForTownBuilding = function() return -1 end,
+				getConstructionEntityForSubconstruction = function() return -1 end,
+				getConstructionEntityForStation = function() return -1 end,
+			},
 			lineSystem = { getLinesForPlayer = function() return { 100, 200 } end },
 			transportVehicleSystem = {
 				getLineVehicles = function(line) return lines[line].vehicles end,

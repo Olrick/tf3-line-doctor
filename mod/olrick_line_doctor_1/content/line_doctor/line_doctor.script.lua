@@ -21,6 +21,8 @@ local json = ug_require "olrick_line_doctor_1::/line_doctor/json.lua"
 -- (reloading a save is not enough), so a missing probe must not stop the exports
 local okProbeModule, probe = pcall(ug_require, "olrick_line_doctor_1::/line_doctor/ticket_probe.lua")
 if not okProbeModule then probe = nil end
+local okPendingModule, pending = pcall(ug_require, "olrick_line_doctor_1::/line_doctor/pending.lua")
+if not okPendingModule then pending = nil end
 
 local LOG_PREFIX = "[LineDoctor] "
 local LOG_CHUNK = 3000
@@ -86,7 +88,7 @@ local function writeToLog(compact)
 	log("LINE_DOCTOR_END")
 end
 
-local function export(reason, ticketProbe)
+local function export(reason, ticketProbe, pendingIncome)
 	local ok, snapshot = pcall(collector.collect, api)
 	if not ok then
 		log("collect failed: " .. tostring(snapshot))
@@ -94,6 +96,7 @@ local function export(reason, ticketProbe)
 	end
 	snapshot.exportReason = reason
 	snapshot.ticketProbe = ticketProbe
+	snapshot.pendingIncome = pendingIncome
 
 	local pretty = json.encode(snapshot, "  ")
 	local compact = json.encode(snapshot)
@@ -153,11 +156,31 @@ function data()
 			if probe then
 				local okProbe, summary = pcall(probe.takeSummary, api, s, now)
 				if not okProbe then ticketProbe = { error = tostring(summary) } else ticketProbe = summary end
+				if okProbe and summary and summary.passengerRatio and pending then
+					pcall(pending.learnRatio, s, summary.passengerRatio.journal, summary.passengerRatio.price)
+				end
 			else
 				ticketProbe = { error = "ticket_probe.lua not loaded: restart the game application" }
 			end
+
+			local pendingIncome
+			if pending then
+				local t0 = clock()
+				local okPending, result = pcall(pending.compute, api, s, now)
+				if okPending then
+					result.calib = s.calib
+					pendingIncome = result
+					s.pending = { t = now, lines = result.lines, items = result.items } -- read by the GUI
+				else
+					pendingIncome = { error = tostring(result) }
+				end
+				log(string.format("pending income: %s items, %s skipped",
+					tostring(okPending and result.items), tostring(okPending and result.skipped)))
+			else
+				pendingIncome = { error = "pending.lua not loaded: restart the game application" }
+			end
 			state:set(s)
-			export(reason, ticketProbe)
+			export(reason, ticketProbe, pendingIncome)
 		end,
 
 		-- never returns a value: ticket prices are observed, not modified
@@ -167,7 +190,8 @@ function data()
 				local gt = api.engine.getComponent(api.engine.util.getWorld(), api.type.ComponentType.GAME_TIME)
 				local s = state:get() or {}
 				if name == "OnCalcTicketPrice" then
-					probe.onTicketPrice(api, s, id, param, gt.gameTime)
+					local learn = pending and function(detail) pending.learnDelivery(s, detail) end or nil
+					probe.onTicketPrice(api, s, id, param, gt.gameTime, learn)
 				else
 					probe.onArrive(api, s, id, param, gt.gameTime)
 				end

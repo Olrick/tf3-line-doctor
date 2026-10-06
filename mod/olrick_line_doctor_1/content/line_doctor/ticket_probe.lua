@@ -13,6 +13,7 @@
 -- The game api is passed in, so the module can be unit-tested with a mocked api.
 
 local M = {}
+local summary_ratio
 
 M.MAX_SAMPLES = 40
 M.MAX_WATCH = 200
@@ -90,7 +91,8 @@ local function cargoDetail(api, sim, basePrice, line, now)
 end
 
 --- Handles an OnCalcTicketPrice event (cargo: TransportVehicleSystem, passengers: SimEntityAtVehicleSystem).
-function M.onTicketPrice(api, s, id, params, now)
+-- @param onDelivered optional function(detail) called for every delivered cargo item
+function M.onTicketPrice(api, s, id, params, now, onDelivered)
 	local p = probeState(s, now)
 	local passenger = id == "SimEntityAtVehicleSystem"
 	local n = 0
@@ -116,9 +118,14 @@ function M.onTicketPrice(api, s, id, params, now)
 			L.transfer = L.transfer + 1
 		end
 
+		local d
+		if not passenger and stock and stock >= 0 and onDelivered then
+			d = cargoDetail(api, e.simEntity, num(e.basePrice), line, now)
+			pcall(onDelivered, d)
+		end
 		if not passenger and stock and stock >= 0
 				and (#p.chains < M.MAX_CHAIN_SAMPLES or #p.singles < M.MAX_SINGLE_SAMPLES) then
-			local d = cargoDetail(api, e.simEntity, num(e.basePrice), line, now)
+			d = d or cargoDetail(api, e.simEntity, num(e.basePrice), line, now)
 			local nseg = d.segments and #d.segments or 0
 			if nseg >= 2 and #p.chains < M.MAX_CHAIN_SAMPLES then
 				p.chains[#p.chains + 1] = d
@@ -193,12 +200,22 @@ function M.takeSummary(api, s, now)
 		end)
 		lines[key] = entry
 	end
+	-- passenger-only lines are paid right away: their booked/price ratio is the game's multiplier
+	local pj, pb = 0, 0
+	for _, e in pairs(lines) do
+		if e.passenger > 0 and e.final == 0 and e.journalIncome then
+			pj, pb = pj + e.journalIncome, pb + e.basePriceSum
+		end
+	end
+	if pb > 0 then summary_ratio = { journal = pj, price = pb } end
 	local pendingWatch = 0
 	for _ in pairs(p.watch) do pendingWatch = pendingWatch + 1 end
 	local summary = {
 		from = p.from, to = now, lines = lines, samples = p.samples, arrivals = p.arrivals,
 		watchedWithoutArrival = pendingWatch, chains = p.chains or {}, singles = p.singles or {},
+		passengerRatio = summary_ratio,
 	}
+	summary_ratio = nil
 	-- keep watching sampled entities across periods, reset the rest
 	s.probe = newPeriod(now, p.watch)
 	return summary
