@@ -463,6 +463,8 @@ class AnalyzerFixtureTest(unittest.TestCase):
         self.assertEqual(wood.steps[1].in_progress, 3000)
         self.assertEqual(wood.steps[1].on_board, 10)
         self.assertEqual((wood.pending, wood.in_progress, wood.net12m), (1500, 3000, 10500000))
+        self.assertEqual(wood.allocated, 10500000)          # lines not shared: full results
+        self.assertEqual(wood.potential, 10500000 + 1500 + 3000)
         new = next(c for c in built if c.lines == [5])
         self.assertFalse(new.delivered)
         page = chains.render(built, meta)

@@ -34,6 +34,8 @@ class Step:
     vehicles: int
     net12m: float | None
     shared: int = 1          # number of chains using this line
+    share: float = 1.0       # part of the line's result attributed to this chain
+    allocated: float = 0.0   # share x the line's 12-month result
     done: float = 0.0        # pending income of completed segments on this step
     in_progress: float = 0.0  # pending income of the segment being driven on this step
     waiting_after: float = 0.0  # cargo units waiting at the end of this step for the next one
@@ -67,6 +69,16 @@ class Chain:
     @property
     def net12m(self) -> float:
         return sum(s.net12m or 0 for s in self.steps)
+
+    @property
+    def allocated(self) -> float:
+        """12-month result of the chain: each line's result split among the chains using it."""
+        return sum(s.allocated for s in self.steps)
+
+    @property
+    def potential(self) -> float:
+        """Allocated result + income already earned but not booked yet."""
+        return self.allocated + self.pending + self.in_progress
 
 
 def _key(cargo, lines) -> str:
@@ -125,9 +137,19 @@ def build(snapshot: dict) -> tuple[list[Chain], dict]:
     for c in chains.values():
         for l in set(c.lines):
             uses[l] = uses.get(l, 0) + 1
+    # split each line's result among its chains, by delivered units (new chains weigh their units in transit)
+    weights: dict[int, dict[str, float]] = {}
+    for c in chains.values():
+        w = c.deliveries if c.deliveries else max(c.units, 1) * 0.1
+        for l in c.lines:
+            weights.setdefault(l, {})
+            weights[l][c.key] = weights[l].get(c.key, 0) + w
     for c in chains.values():
         for s in c.steps:
             s.shared = uses.get(s.line, 1)
+            total = sum(weights[s.line].values())
+            s.share = weights[s.line][c.key] / total if total else 1.0
+            s.allocated = (s.net12m or 0) * s.share
 
     meta = {"date": snapshot.get("date"), "k": k, "items": pi.get("items"), "skipped": pi.get("skipped"),
             "yearTicks": snapshot.get("yearTicks") or 1461000, "gameTime": snapshot.get("gameTime")}
@@ -155,11 +177,13 @@ def render(chains: list[Chain], meta: dict, title="Chaînes de transport") -> st
         rows = []
         for i, s in enumerate(c.steps, 1):
             shared = f' <span class="tag">partagée ×{s.shared}</span>' if s.shared > 1 else ""
+            part = f"{s.share:.0%} → {_m(s.allocated)}" if s.shared > 1 else _m(s.allocated)
             rows.append(
                 f"<tr><td class='n'>{i}</td><td><b>{html.escape(s.name)}</b>{shared}"
                 f"<div class='stops'>{html.escape(' → '.join(s.stops))}</div></td>"
                 f"<td class='r'>{s.vehicles}</td>"
                 f"<td class='r {_cls(s.net12m)}'>{_m(s.net12m)}</td>"
+                f"<td class='r {_cls(s.allocated)}'>{part}</td>"
                 f"<td class='r pos'>{_m(s.done)}</td><td class='r'>{_m(s.in_progress)}</td>"
                 f"<td class='r'>{s.on_board:.0f} / {s.waiting_after:.0f}</td></tr>")
         per = c.price_sum / c.deliveries * meta["k"] if c.deliveries else None
@@ -171,14 +195,17 @@ def render(chains: list[Chain], meta: dict, title="Chaînes de transport") -> st
                   if c.delivered else "<b class='neg'>jamais livrée depuis l'installation du mod</b> (chaîne neuve ou interrompue)")
         cards.append(f"""
 <section class="card">
-  <h2>{html.escape(c.cargo)} <span class="sub">{len(c.steps)} étape(s)</span></h2>
+  <h2>{html.escape(c.cargo)} <span class="sub">{len(c.steps)} étape(s) · résultat de la chaîne
+    <b class="{_cls(c.allocated)}">{_m(c.allocated)}</b> · potentiel avec l'attente
+    <b class="{_cls(c.potential)}">{_m(c.potential)}</b></span></h2>
   <p class="status">{status}</p>
   <table>
     <thead><tr><th>#</th><th>Ligne et arrêts</th><th class='r'>Véh.</th><th class='r'>Résultat 12 mois de la ligne</th>
+    <th class='r'>Part pour cette chaîne</th>
     <th class='r'>En attente</th><th class='r'>En cours</th><th class='r'>Unités à bord / en attente</th></tr></thead>
     <tbody>{''.join(rows)}</tbody>
-    <tfoot><tr><td></td><td><b>Total chaîne</b></td><td></td>
-      <td class='r {_cls(c.net12m)}'><b>{_m(c.net12m)}</b></td>
+    <tfoot><tr><td></td><td><b>Total chaîne</b></td><td></td><td></td>
+      <td class='r {_cls(c.allocated)}'><b>{_m(c.allocated)}</b></td>
       <td class='r pos'><b>{_m(c.pending)}</b></td><td class='r'><b>{_m(c.in_progress)}</b></td>
       <td class='r'><b>{c.units:.0f}</b></td></tr></tfoot>
   </table>
@@ -211,8 +238,9 @@ part de chaque étape ∝ longueur de son segment. Passagers exclus (payés à c
 <div class="kpi"><div>En attente (étapes terminées)<b class="pos">{_m(total_pending)}</b></div>
 <div>En cours (segments en route)<b>{_m(total_progress)}</b></div><div>Chaînes<b>{len(chains)}</b></div></div>
 {''.join(cards)}
-<p class="lead">« Résultat 12 mois de la ligne » est le résultat complet de la ligne : une ligne partagée par plusieurs chaînes
-(étiquette « partagée ») y compte pour toutes ses chaînes.</p>
+<p class="lead">« Part pour cette chaîne » : le résultat 12 mois d'une ligne partagée est réparti entre ses chaînes au prorata
+des unités livrées. « Résultat de la chaîne » = somme de ces parts ; « potentiel » = ce résultat + l'attente + l'en cours
+(recettes déjà gagnées, versées à la livraison finale).</p>
 </main></body></html>"""
 
 
@@ -221,6 +249,7 @@ def main(argv=None) -> int:
     ap.add_argument("source", nargs="?", help="export.json or game log (default: latest found)")
     ap.add_argument("--html", default="out/chaines.html", help="output HTML file")
     ap.add_argument("--cargo", help="only chains whose cargo name contains this text")
+    ap.add_argument("--deficit", action="store_true", help="only chains whose result is negative, worst first")
     args = ap.parse_args(argv)
     source = args.source or (analyze.default_candidates() or [None])[0]
     if not source:
@@ -233,13 +262,17 @@ def main(argv=None) -> int:
     chains, meta = build(snaps[-1])
     if args.cargo:
         chains = [c for c in chains if args.cargo.lower() in c.cargo.lower()]
+    title = "Chaînes de transport"
+    if args.deficit:
+        chains = sorted((c for c in chains if c.allocated < 0), key=lambda c: c.allocated)
+        title = "Chaînes déficitaires"
     out = Path(args.html)
     out.parent.mkdir(parents=True, exist_ok=True)
-    out.write_text(render(chains, meta), encoding="utf-8")
+    out.write_text(render(chains, meta, title), encoding="utf-8")
     sys.stdout.reconfigure(encoding="utf-8")
     print(f"{len(chains)} chaînes -> {out.resolve()}")
     for c in chains[:10]:
-        print(f"  {c.cargo:12} {' > '.join(s.name for s in c.steps)} | en attente {_m(c.pending)} | en cours {_m(c.in_progress)}")
+        print(f"  {c.cargo:12} {' > '.join(s.name for s in c.steps)} | résultat {_m(c.allocated)} | en attente {_m(c.pending)} | en cours {_m(c.in_progress)}")
     return 0
 
 
