@@ -19,6 +19,7 @@ M.DEFAULT_K = 0.804     -- booked income / computed price (measured)
 M.EMA = 0.1             -- weight of a new measurement
 M.MAX_CHAINS = 400      -- distinct delivered chains remembered (cargo type + sequence of lines)
 M.MAX_PREFIXES = 600    -- distinct partial chains reported per computation
+M.MAX_POSITIONS = 4000  -- remembered destination / stop positions
 
 local function num(v)
 	if type(v) == "number" then return v end
@@ -75,7 +76,7 @@ end
 local function calib(s)
 	s.calib = s.calib or {}
 	s.calib.types = s.calib.types or {}
-	s.calib.k = s.calib.k or { v = M.DEFAULT_K, n = 0 }
+	s.calib.k = { v = M.DEFAULT_K, n = 0 }
 	return s.calib
 end
 
@@ -107,10 +108,23 @@ end
 
 --- Learns from one real delivery (see ticket_probe cargoDetail): price factor of the cargo type and the
 --- chain of lines it used.
+local function remember(s, field, key, pos)
+	if key == nil or pos == nil then return end
+	s[field] = s[field] or {}
+	local t = s[field]
+	key = tostring(key)
+	if t[key] == nil then
+		s[field .. "Count"] = (s[field .. "Count"] or 0) + 1
+		if s[field .. "Count"] > M.MAX_POSITIONS then return end
+	end
+	t[key] = pos
+end
+
 function M.learnDelivery(s, detail)
 	local segs = detail and detail.segments
 	if not segs or #segs == 0 then return end
 	pcall(recordChain, s, detail)
+	remember(s, "targetPos", detail.target, detail.unloadPos) -- where cargo for this customer gets unloaded
 	if not segs[1].pos or not detail.unloadPos or not detail.basePrice then return end
 	local direct = M.dist(segs[1].pos, detail.unloadPos)
 	if direct < 50 then return end
@@ -121,11 +135,9 @@ function M.learnDelivery(s, detail)
 end
 
 --- Learns the booked/price ratio from a period where passenger-only lines were observed.
-function M.learnRatio(s, journal, price)
-	if not journal or not price or price <= 0 then return end
-	local r = journal / price
-	if r < 0.3 or r > 2 then return end
-	ema(calib(s).k, r)
+-- Disabled: measured over periods spanning save reloads it drifted (1.37 instead of 0.804); the constant
+-- measured on 1 335 events is used instead. Kept so callers stay valid.
+function M.learnRatio(_s, _journal, _price)
 end
 
 local function factorFor(c, cargoType)
@@ -139,13 +151,34 @@ local function factorFor(c, cargoType)
 	return M.DEFAULT_FACTOR, false
 end
 
+-- Positions of the stops of every player line, from the vehicles standing at them (remembered).
+function M.learnStopPositions(api, s)
+	local C = api.type.ComponentType
+	local lines = api.engine.system.lineSystem.getLinesForPlayer(api.engine.util.getPlayer())
+	for li = 1, #lines do
+		pcall(function()
+			local vehicles = api.engine.system.transportVehicleSystem.getLineVehicles(lines[li])
+			for vi = 1, #vehicles do
+				local tv = api.engine.getComponent(vehicles[vi], C.TRANSPORT_VEHICLE)
+				local atTerminal = tv and (tostring(tv.state) == "2" or tostring(tv.state) == "AT_TERMINAL")
+				if atTerminal then
+					remember(s, "stopPos", tostring(lines[li]) .. ":" .. tostring(tv.stopIndex),
+						vec(api.engine.util.vehicle.getPosition(vehicles[vi])))
+				end
+			end
+		end)
+	end
+end
+
 -- Where the item was unloaded after its last completed segment, when it waits for its next line.
-local function waitingPos(api, sim, cache)
+local function waitingPos(api, s, sim, cache)
 	local C = api.type.ComponentType
 	local pos
 	pcall(function()
 		local w = api.engine.getComponent(sim, C.SIM_ENTITY_AT_TERMINAL)
 		if not w then return end
+		pos = s.stopPos and s.stopPos[tostring(w.line) .. ":" .. tostring(w.lineStop0)]
+		if pos then return end
 		local line = api.engine.getComponent(w.line, C.LINE)
 		local stop = line.stops[w.lineStop0 + 1]
 		local group = api.engine.getComponent(stop.stationGroup, C.STATION_GROUP)
@@ -206,6 +239,8 @@ function M.compute(api, s, now)
 	local lines = {}
 	local prefixes, prefixCount = {}, 0
 	local items, skipped, defaulted = 0, 0, 0
+	local why = { noFirstPos = 0, noTarget = 0, noVehiclePos = 0, noWaitingPos = 0, error = 0 }
+	pcall(M.learnStopPositions, api, s)
 
 	local function add(line, field, value)
 		local key = tostring(line)
@@ -221,7 +256,7 @@ function M.compute(api, s, now)
 	local entities = M.gatherSims(api)
 	for i = 1, #entities do
 		local sim = entities[i]
-		local ok = pcall(function()
+		local ok, err = pcall(function()
 			local cargo = api.engine.getComponent(sim, C.SIM_CARGO)
 			local pps = cargo and cargo.pickupPoints
 			local n = pps and #pps or 0
@@ -229,9 +264,11 @@ function M.compute(api, s, now)
 
 			local pts = {}
 			for j = 1, n do pts[j] = vec(pps[j].position) end
-			local target = M.positionOf(api, cargo.targetOrPickupEntity, cache)
+			local target = s.targetPos and s.targetPos[tostring(cargo.targetOrPickupEntity)]
+			if not target then target = M.positionOf(api, cargo.targetOrPickupEntity, cache) end
 			if not pts[1] or not target then
 				skipped = skipped + 1
+				if not pts[1] then why.noFirstPos = why.noFirstPos + 1 else why.noTarget = why.noTarget + 1 end
 				return
 			end
 
@@ -241,10 +278,11 @@ function M.compute(api, s, now)
 				current = vec(api.engine.util.vehicle.getPosition(atVehicle.vehicle))
 				inVehicle = true
 			else
-				current = waitingPos(api, sim, cache)
+				current = waitingPos(api, s, sim, cache)
 			end
 			if not current then
 				skipped = skipped + 1
+				if inVehicle then why.noVehiclePos = why.noVehiclePos + 1 else why.noWaitingPos = why.noWaitingPos + 1 end
 				return
 			end
 
@@ -290,12 +328,18 @@ function M.compute(api, s, now)
 			end
 			items = items + 1
 		end)
-		if not ok then skipped = skipped + 1 end
+		if not ok then
+			skipped = skipped + 1
+			why.error = why.error + 1
+			why.firstError = why.firstError or tostring(err)
+		end
 	end
 
 	local prefixList = {}
 	for _, P in pairs(prefixes) do prefixList[#prefixList + 1] = P end
-	return { t = now, lines = lines, items = items, skipped = skipped, defaultFactor = defaulted, k = k,
+	local known = { targets = s.targetPosCount or 0, stops = s.stopPosCount or 0 }
+	return { t = now, lines = lines, items = items, skipped = skipped, skippedWhy = why, positionsKnown = known,
+		defaultFactor = defaulted, k = k,
 		prefixes = prefixList, chains = s.chains }
 end
 

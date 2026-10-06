@@ -174,8 +174,15 @@ function data()
 				else
 					pendingIncome = { error = tostring(result) }
 				end
-				log(string.format("pending income: %s items, %s skipped",
-					tostring(okPending and result.items), tostring(okPending and result.skipped)))
+				if okPending then
+					local w = result.skippedWhy or {}
+					log(string.format("pending income: %d items, %d skipped (no first pos %d, no target %d, no vehicle pos %d, no waiting pos %d, errors %d %s), known targets %d stops %d",
+						result.items, result.skipped, w.noFirstPos or 0, w.noTarget or 0, w.noVehiclePos or 0,
+						w.noWaitingPos or 0, w.error or 0, tostring(w.firstError or ""),
+						result.positionsKnown.targets, result.positionsKnown.stops))
+				else
+					log("pending income failed: " .. tostring(result))
+				end
 			else
 				pendingIncome = { error = "pending.lua not loaded: restart the game application" }
 			end

@@ -12,6 +12,12 @@ local C = { LINE = 1, GAME_TIME = 2, TRANSPORT_VEHICLE = 3, ACCOUNT = 4, SIM_CAR
 
 -- a coal unit delivered by line 200 after a first leg on line 100 (sim 9002)
 local simCargo = {
+	-- unloaded by line 100 at line 200's first stop, waiting there; customer 88 has no construction
+	[9003] = {
+		cargoType = 5, startTime = NOW - 30000, pickupTime = NOW - 20000, deliveryExtensionDuration = 0,
+		sourceEntity = 501, targetOrPickupEntity = 88,
+		pickupPoints = { { line = 100, vehicle = 12, carrier = 0, position = { x = 0, y = 0, z = 0 } } },
+	},
 	[9002] = {
 		cargoType = 5, startTime = NOW - 50000, pickupTime = NOW - 40000, deliveryExtensionDuration = 0,
 		sourceEntity = 501, targetOrPickupEntity = 77,
@@ -48,7 +54,7 @@ local lines = {
 local vehicles = {
 	[11] = { line = 100, cap = { 40 }, loaded = 5, age = 30 }, [12] = { line = 100, cap = { 40 }, loaded = 5, age = 30 },
 	[13] = { line = 100, cap = { 40 }, loaded = 5, age = 30 }, [14] = { line = 100, cap = { 40 }, loaded = 5, age = 30, stopped = true },
-	[21] = { line = 200, cap = { 0, 0, 0, 0, 0, 20 }, loaded = 19, age = 2, pending = 1234 },
+	[21] = { line = 200, cap = { 0, 0, 0, 0, 0, 20 }, loaded = 19, age = 2, pending = 1234, state = 2, stop = 0 },
 	[22] = { line = 200, cap = { 0, 0, 0, 0, 0, 20 }, loaded = 19, age = 2 },
 }
 
@@ -64,7 +70,8 @@ local constructions = {
 local function component(e, t)
 	if t == C.CONSTRUCTION then return constructions[e] end
 	if t == C.SIM_CARGO then return simCargo[e] end
-	if t == C.SIM_ENTITY_AT_VEHICLE and simCargo[e] then return { line = 200, vehicle = 22 } end
+	if t == C.SIM_ENTITY_AT_VEHICLE and e == 9002 then return { line = 200, vehicle = 22 } end
+	if t == C.SIM_ENTITY_AT_TERMINAL and e == 9003 then return { line = 200, lineStop0 = 0, lineStop1 = 1 } end
 	if t == C.GAME_TIME and e == 1 then return { gameTime = NOW } end
 	if t == C.ACCOUNT and e == 2 then return { balance = 1500000, loan = 500000 } end
 	if t == C.LINE and lines[e] then
@@ -78,8 +85,8 @@ local function component(e, t)
 	if t == C.TRANSPORT_VEHICLE and vehicles[e] then
 		local v = vehicles[e]
 		return {
-			state = STATE.EN_ROUTE, userStopped = v.stopped or false, sellOnArrival = false, noPath = false,
-			daysAtTerminal = 0, daysInDepot = 0, stopIndex = 0, autoDeparture = true,
+			state = v.state or STATE.EN_ROUTE, userStopped = v.stopped or false, sellOnArrival = false, noPath = false,
+			daysAtTerminal = 0, daysInDepot = 0, stopIndex = v.stop or 0, autoDeparture = true,
 			sectionTimes = { 100, 100 }, lastLineStopDeparture = NOW - 1000,
 			config = { capacities = v.cap },
 			unloadPendingIncome = { { amount = v.pending or 0, lineEntity = v.line } }, -- a list, like the engine
@@ -168,7 +175,10 @@ return {
 			vehicle = {
 				getRunningCost = function() return 12000 end,
 				getSpeed = function() return 15 end,
-				getPosition = function(v) return { x = 900, y = 1200, z = 10 } end,
+				getPosition = function(v)
+					if v == 21 then return { x = 300, y = 400, z = 0 } end -- standing at line 200's first stop
+					return { x = 900, y = 1200, z = 10 }
+				end,
 			},
 		},
 		system = {
@@ -191,7 +201,7 @@ return {
 			},
 			simEntityAtTerminalSystem = {
 				getLineStopSimEntities = function(line, stopIndex, cargoType)
-					if line == 200 and stopIndex == 0 and cargoType == 5 then return { 9002 } end -- duplicate on purpose
+					if line == 200 and stopIndex == 0 and cargoType == 5 then return { 9002, 9003 } end -- 9002: duplicate on purpose
 					return {}
 				end,
 				getLineStopSimEntitiesCount = function(line, stopIndex) return lines[line].waiting[stopIndex + 1] end,

@@ -248,6 +248,24 @@ class LuaModTest(unittest.TestCase):
         self.assertAlmostEqual(prefix["done"][0], res["lines"]["100"]["done"], places=2)
         self.assertAlmostEqual(prefix["inProgress"], res["lines"]["200"]["inProgress"], places=2)
 
+    def test_pending_positions_from_observed_deliveries_and_stops(self):
+        res = json.loads(self.lua.eval("""(function()
+            local pending = ug_require("olrick_line_doctor_1::/line_doctor/pending.lua")
+            local json = ug_require("olrick_line_doctor_1::/line_doctor/json.lua")
+            local s = {}
+            local first = pending.compute(api, s, 10)          -- customer 88 never delivered yet: skipped
+            pending.learnDelivery(s, { cargoType = 5, basePrice = 9000, t = 11, target = 88,
+                segments = { { line = 100, pos = { 0, 0, 0 } } }, unloadPos = { 300, 1400, 0 } })
+            local second = pending.compute(api, s, 20)
+            return json.encode({ first = first, second = second, stop = s.stopPos["200:0"] })
+        end)()"""))
+        self.assertEqual(res["first"]["skippedWhy"]["noTarget"], 1)
+        self.assertEqual(res["stop"], [300, 400, 0])           # learned from vehicle 21 standing there
+        self.assertEqual(res["second"]["items"], 2)            # 9002 in a vehicle, 9003 waiting at the stop
+        self.assertEqual(res["second"]["skipped"], 0)
+        # 9003: line 100 drove 500 m of a 500 + 1000 m trip, all done (waiting for line 200)
+        self.assertGreater(res["second"]["lines"]["100"]["done"], 0)
+
     def test_pending_learns_factor_from_deliveries(self):
         f = self.lua.eval("""(function()
             local pending = ug_require("olrick_line_doctor_1::/line_doctor/pending.lua")
