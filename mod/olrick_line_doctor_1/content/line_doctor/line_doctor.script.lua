@@ -152,7 +152,7 @@ function data()
 			local ticketProbe
 			if probe then
 				local okProbe, summary = pcall(probe.takeSummary, api, s, now)
-				ticketProbe = okProbe and summary or { error = tostring(summary) }
+				if not okProbe then ticketProbe = { error = tostring(summary) } else ticketProbe = summary end
 			else
 				ticketProbe = { error = "ticket_probe.lua not loaded: restart the game application" }
 			end

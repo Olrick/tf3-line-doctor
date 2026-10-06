@@ -163,6 +163,11 @@ class LuaModTest(unittest.TestCase):
         self.assertEqual(summary["arrivals"]["cargo"], 1)
         self.assertEqual(summary["arrivals"]["sampled"][0]["sim"], 9001)
         self.assertEqual(len(summary["samples"]), 3)
+        chain = summary["chains"][0]                       # 9002: delivered after two lines
+        self.assertEqual([seg["line"] for seg in chain["segments"]], [100, 200])
+        self.assertEqual(chain["segments"][1]["pos"], [300, 400, 0])
+        self.assertEqual(chain["unloadPos"], [900, 1200, 10])
+        self.assertEqual(chain["basePrice"], 3000)
         # a new period starts, sampled entities still watched
         self.assertEqual(self.lua.eval("saved.probe.samples[1]"), None)
 

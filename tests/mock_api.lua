@@ -8,7 +8,19 @@ local YEAR = 1461000 -- value observed in game
 local NUM_CARGO_TYPES = 37
 local NOW = 5 * YEAR
 
-local C = { LINE = 1, GAME_TIME = 2, TRANSPORT_VEHICLE = 3, ACCOUNT = 4 }
+local C = { LINE = 1, GAME_TIME = 2, TRANSPORT_VEHICLE = 3, ACCOUNT = 4, SIM_CARGO = 5, SIM_ENTITY_AT_VEHICLE = 6 }
+
+-- a coal unit delivered by line 200 after a first leg on line 100 (sim 9002)
+local simCargo = {
+	[9002] = {
+		cargoType = 5, startTime = NOW - 50000, pickupTime = NOW - 40000, deliveryExtensionDuration = 0,
+		sourceEntity = 501, targetOrPickupEntity = 77,
+		pickupPoints = {
+			{ line = 100, vehicle = 11, carrier = 0, position = { x = 0, y = 0, z = 0 } },
+			{ line = 200, vehicle = 22, carrier = 0, position = { x = 300, y = 400, z = 0 } },
+		},
+	},
+}
 local MAINT = { VEHICLE = 10, VEHICLE_MAINTENANCE = 11 }
 local STATE = { IN_DEPOT = 0, EN_ROUTE = 1, AT_TERMINAL = 2, GOING_TO_DEPOT = 3 }
 
@@ -45,6 +57,8 @@ for id, l in pairs(lines) do names[id] = l.name end
 for id in pairs(vehicles) do names[id] = "Vehicle " .. id end
 
 local function component(e, t)
+	if t == C.SIM_CARGO then return simCargo[e] end
+	if t == C.SIM_ENTITY_AT_VEHICLE and simCargo[e] then return { line = 200, vehicle = 22 } end
 	if t == C.GAME_TIME and e == 1 then return { gameTime = NOW } end
 	if t == C.ACCOUNT and e == 2 then return { balance = 1500000, loan = 500000 } end
 	if t == C.LINE and lines[e] then
@@ -142,6 +156,7 @@ return {
 			vehicle = {
 				getRunningCost = function() return 12000 end,
 				getSpeed = function() return 15 end,
+				getPosition = function(v) return { x = 900, y = 1200, z = 10 } end,
 			},
 		},
 		system = {
