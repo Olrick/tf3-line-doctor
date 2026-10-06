@@ -5,10 +5,8 @@
         "line_doctor/json.lua",
         "line_doctor/line_doctor.gs.lua",
         "line_doctor/line_doctor.script.lua",
-        "line_doctor/line_doctor_button.res.lua",
         "line_doctor/line_doctor_card.res.lua",
         "line_doctor/line_doctor_gui.script.lua",
-        "line_doctor/line_doctor_window.res.lua",
         "line_doctor/pending.lua",
         "line_doctor/ticket_probe.lua"
     ]
