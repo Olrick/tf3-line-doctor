@@ -62,7 +62,7 @@ local function component(e, t)
 			daysAtTerminal = 0, daysInDepot = 0, stopIndex = 0, autoDeparture = true,
 			sectionTimes = { 100, 100 }, lastLineStopDeparture = NOW - 1000,
 			config = { capacities = v.cap },
-			unloadPendingIncome = { amount = v.pending or 0 },
+			unloadPendingIncome = { { amount = v.pending or 0, lineEntity = v.line } }, -- a list, like the engine
 			transportVehicleConfig = { vehicles = { { part = { modelId = 7 }, purchaseTime = NOW - v.age * YEAR, maintenanceState = 0.9 } } },
 		}
 	end

@@ -162,9 +162,25 @@ local function collectVehicle(api, vehicle, now, yearTicks, stateEnum)
 		return total
 	end)
 	-- revenue of the whole trip is only credited at final delivery; this is what the vehicle carries until then
-	v.pendingIncome = try("unloadPendingIncome", function()
+	-- the api documents it as a "list of pending income": accept a list or a single record
+	try("unloadPendingIncome", function()
 		local p = tv.unloadPendingIncome
-		return p and num(p.amount)
+		if p == nil then return end
+		local entries = list(p)
+		if #entries == 0 then entries = { p } end
+		local total, found = 0, false
+		for _, e in ipairs(entries) do
+			local amount = num(e.amount)
+			if amount then
+				total = total + amount
+				found = true
+			end
+		end
+		if found then
+			v.pendingIncome = total
+		else
+			v.pendingIncomeRaw = tostring(p) -- unknown shape: keep a trace to adapt the collector
+		end
 	end)
 	v.runningCostPerYear = try("getRunningCost", api.engine.util.vehicle.getRunningCost, vehicle)
 	v.speed = try("getSpeed", api.engine.util.vehicle.getSpeed, vehicle)
