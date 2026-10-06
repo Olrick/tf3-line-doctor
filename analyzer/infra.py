@@ -52,20 +52,29 @@ def build(snapshot: dict) -> dict:
     infra = snapshot.get("infrastructure")
     if not infra:
         raise ValueError("pas de données d'infrastructure dans l'export (mettre à jour le mod et relancer le jeu)")
-    raw_total = infra.get("total") or 0
     finance = infra_upkeep_from_finance(snapshot)
-    unknown = sum(1 for b in infra.get("buildings") or [] if not b.get("cost"))
-    # scaling on the finance table is only valid when every building has a cost
-    scale = (finance / raw_total) if (finance and raw_total and unknown == 0) else 1.0
     lines = {l["id"]: l for l in snapshot.get("lines") or []}
 
+    def yearly_cost(b) -> float:
+        # Calibrated in game (2026-10-06): the engine's per-module computation, summed over a building's modules,
+        # totals 37.9 M for 121 buildings vs 35.5 M/year of building upkeep in the finance table (7 %); the raw
+        # MaintenanceCost component is ~1/5 of that and the per-station-group computation ~1/2.
+        parts = b.get("costParts") or {}
+        return parts.get("subcon") or parts.get("group") or parts.get("building") or b.get("cost") or 0
+
+    # industries (with built-in cargo stations) belong to the economy, not to the player: no upkeep
+    owned = [b for b in infra.get("buildings") or [] if "/industries/" not in (b.get("file") or "")]
+    unknown = sum(1 for b in owned if not yearly_cost(b))
+    scale = 1.0
+    raw_total = sum(yearly_cost(b) for b in owned)
+
     buildings = []
-    for b in infra.get("buildings") or []:
+    for b in owned:
         served = [lines[l] for l in b.get("lines") or [] if l in lines]
         fin = [((l.get("finance") or {}).get("last12Months") or {}) for l in served]
         buildings.append({
             "name": b.get("name") or f"#{b['id']}", "kind": b.get("kind"), "file": b.get("file"),
-            "cost": b["cost"] * scale,
+            "cost": yearly_cost(b),
             "lines": [l.get("name") for l in served],
             "linesNet": sum(f.get("net") or 0 for f in fin),
             "linesIncome": sum(f.get("income") or 0 for f in fin),
@@ -83,7 +92,7 @@ def build(snapshot: dict) -> dict:
             k["unusedCost"] += b["cost"]
     return {
         "date": snapshot.get("date"), "scale": scale, "financeUpkeep": finance, "rawTotal": raw_total,
-        "buildings": buildings, "kinds": kinds, "unknown": unknown, "scaled": scale != 1.0,
+        "buildings": buildings, "kinds": kinds, "unknown": unknown, "scaled": False,
         "street": _finance_row(snapshot, "routes ("), "track": _finance_row(snapshot, "voies ferrées"),
         "other": (infra.get("other") or {}).get("cost", 0) * scale,
         "otherSamples": (infra.get("other") or {}).get("samples") or [],
@@ -118,12 +127,12 @@ def render(r: dict) -> str:
                 f"<td class='r'>{_m(b['transported'])}</td><td class='r'>{_m(b['linesIncome'])}</td>"
                 f"<td class='r {'neg' if b['linesNet'] < 0 else 'pos'}'>{_m(b['linesNet'])}</td></tr>")
 
-    if r["scaled"]:
-        scale_note = (f"Coûts recalés sur le tableau des finances du jeu (entretien des bâtiments ≈ {_m(r['financeUpkeep'])}/an ; "
-                      f"facteur {r['scale']:.3g} appliqué au coût du moteur).")
-    else:
-        scale_note = (f"Coûts du moteur, unité non confirmée ({r['unknown']} bâtiments sans coût lisible) ; le tableau des "
-                      f"finances indique ≈ {_m(r['financeUpkeep'])}/an d'entretien des bâtiments. Comparer les bâtiments entre eux.")
+    known = sum(b["cost"] for b in r["buildings"])
+    gap = (known / r["financeUpkeep"] - 1) if r["financeUpkeep"] else None
+    scale_note = ("Coût annuel calculé par le jeu, module par module. Contrôle : total des bâtiments "
+                  f"{_m(known)} contre {_m(r['financeUpkeep'])}/an d'entretien des bâtiments dans le tableau des finances"
+                  + (f" ({gap:+.0%})." if gap is not None else ".")
+                  + (f" {r['unknown']} bâtiment(s) sans coût lisible." if r["unknown"] else ""))
     return f"""<!doctype html>
 <html lang="fr"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Entretien de l'infrastructure</title>

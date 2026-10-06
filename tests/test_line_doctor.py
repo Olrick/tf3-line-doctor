@@ -314,7 +314,7 @@ class LuaModTest(unittest.TestCase):
         snap = self.collect()
         report = infra_mod.build(snap)
         self.assertAlmostEqual(report["financeUpkeep"], 25000)
-        self.assertGreater(report["scale"], 0)
+        self.assertEqual(sum(b["cost"] for b in report["buildings"]), 80000)  # mock: component costs only
         self.assertEqual(report["kinds"]["gare de marchandises (route)"]["unused"], 1)
         self.assertIn("sans aucune ligne", infra_mod.render(report))
 
