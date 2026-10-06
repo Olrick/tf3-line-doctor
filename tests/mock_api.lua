@@ -122,7 +122,8 @@ return {
 	engine = {
 		getComponent = component,
 		getEntitiesWithComponent = function(t)
-			if t == C.SIM_CARGO then return { 9002 } end
+			-- like the engine: sim entities cannot be iterated this way
+			if t == C.SIM_CARGO then error("Cannot loop over this component type") end
 			return {}
 		end,
 		entityExists = function() return true end,
@@ -189,9 +190,15 @@ return {
 				getNoPathVehicles = function() return {} end,
 			},
 			simEntityAtTerminalSystem = {
+				getLineStopSimEntities = function(line, stopIndex, cargoType)
+					if line == 200 and stopIndex == 0 and cargoType == 5 then return { 9002 } end -- duplicate on purpose
+					return {}
+				end,
 				getLineStopSimEntitiesCount = function(line, stopIndex) return lines[line].waiting[stopIndex + 1] end,
 			},
 			simEntityAtVehicleSystem = {
+				-- vehicle -> cargo type -> sims on board (sim 9002 is in vehicle 22, coal = 5; a passenger in 11)
+				getVehicle2Cargo2SimEntitesMap = function() return { [22] = { [5] = { 9002 } }, [11] = { [0] = { 7001 } } } end,
 				-- like the engine: one count per cargo type
 				getVehicleSimEntitiesCount = function(v)
 					local out = {}

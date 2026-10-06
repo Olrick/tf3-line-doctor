@@ -45,7 +45,7 @@ local function money(v)
 end
 
 local function dateText(t)
-	if t == nil then return "pas encore calculé" end
+	if t == nil then return nil end
 	local text = "?"
 	pcall(function()
 		local d = api.engine.util.getCalendarDate(t)
@@ -82,7 +82,8 @@ local LineDoctorCardContent = react.RegisterRecipe("LineDoctorCardContent", func
 			row("Profit en attente (segments terminés)", money(s.done), "positive"),
 			row("Profit en cours (segment en route)", money(s.inProgress)),
 			row("Marchandises en route après cette ligne", tostring(s.units)),
-			text("Versé à la livraison au client final. Calculé le " .. dateText(s.t) .. "."),
+			text("Versé à la livraison au client final. " .. (dateText(s.t) and ("Calculé le " .. dateText(s.t) .. ".")
+				or "Pas encore calculé : premier calcul au prochain mois de jeu.")),
 		},
 	}
 end)

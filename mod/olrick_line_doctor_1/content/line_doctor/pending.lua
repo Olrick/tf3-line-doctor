@@ -154,6 +154,48 @@ local function waitingPos(api, sim, cache)
 	return pos
 end
 
+-- Cargo items that already used a line: on board a vehicle, or waiting at a line stop for their next line.
+-- (The engine refuses to iterate all SIM_CARGO entities: "Cannot loop over this component type".)
+function M.gatherSims(api)
+	local sys = api.engine.system
+	local seen, list = {}, {}
+	local function push(sim)
+		if sim ~= nil and not seen[sim] then
+			seen[sim] = true
+			list[#list + 1] = sim
+		end
+	end
+	pcall(function()
+		for _, byCargo in pairs(sys.simEntityAtVehicleSystem.getVehicle2Cargo2SimEntitesMap()) do
+			for cargoType, sims in pairs(byCargo) do
+				if num(cargoType) ~= 0 then -- passengers are paid per ride
+					for i = 1, #sims do push(sims[i]) end
+				end
+			end
+		end
+	end)
+	pcall(function()
+		local lines = sys.lineSystem.getLinesForPlayer(api.engine.util.getPlayer())
+		for li = 1, #lines do
+			local line = lines[li]
+			pcall(function()
+				local comp = api.engine.getComponent(line, api.type.ComponentType.LINE)
+				local usages = api.engine.util.line.getLineCapacityUsages(line, true)
+				for index = 2, #usages do -- entry i = cargo type i - 1; entry 1 = passengers
+					local u = usages[index]
+					if u and ((num(u.capacity) or 0) > 0) then
+						for stop = 0, #comp.stops - 1 do
+							local sims = sys.simEntityAtTerminalSystem.getLineStopSimEntities(line, stop, index - 1)
+							for i = 1, #sims do push(sims[i]) end
+						end
+					end
+				end
+			end)
+		end
+	end)
+	return list
+end
+
 --- Estimates the pending income of every line.
 -- @return { t, lines = { [lineId] = { done, inProgress, units } }, items, skipped, factorsUsed }
 function M.compute(api, s, now)
@@ -176,7 +218,7 @@ function M.compute(api, s, now)
 		return L
 	end
 
-	local entities = api.engine.getEntitiesWithComponent(C.SIM_CARGO)
+	local entities = M.gatherSims(api)
 	for i = 1, #entities do
 		local sim = entities[i]
 		local ok = pcall(function()
