@@ -162,7 +162,7 @@ return {
 		getEntitiesWithComponent = function(t)
 			-- like the engine: sim entities cannot be iterated this way
 			if t == C.SIM_CARGO then error("Cannot loop over this component type") end
-			if t == C.MAINTENANCE_COST then return { 601, 602, 801, 802 } end
+			if t == C.MAINTENANCE_COST then error("Cannot loop over this component type") end
 			return {}
 		end,
 		entityExists = function() return true end,
@@ -215,7 +215,10 @@ return {
 			},
 		},
 		system = {
+			vehicleDepotSystem = { forEach = function(fn) end },
 			streetConnectorSystem = {
+				getStation2ConstructionMap = function() return { [701] = 601, [702] = 602 } end,
+				getConstructionEntityForDepot = function() return -1 end,
 				getConstructionEntityForIndustry = function() return -1 end,
 				getConstructionEntityForTownBuilding = function() return -1 end,
 				getConstructionEntityForSubconstruction = function() return -1 end,

@@ -25,12 +25,26 @@ def infra_upkeep_from_finance(snapshot: dict) -> float | None:
     fs = analyze.finance_summary(snapshot)
     if not fs:
         return None
-    rows = [v for k, v in fs["rows"].items() if k.startswith("Entretien de l'infrastructure")]
+    # buildings only: streets and tracks are separate rows of the finance table
+    rows = [v for k, v in fs["rows"].items() if k.startswith("Entretien de l'infrastructure")
+            and "routes (" not in k and "voies ferrées" not in k]
     if not rows:
         return None
     n = len(rows[0])
     complete = range(max(n - 1, 1))  # the last column is the period in progress
     per = [sum(r[i] for r in rows) for i in complete]
+    return -sum(per) / len(per)
+
+
+def _finance_row(snapshot: dict, needle: str) -> float:
+    fs = analyze.finance_summary(snapshot)
+    if not fs:
+        return 0.0
+    rows = [v for k, v in fs["rows"].items() if k.startswith("Entretien de l'infrastructure") and needle in k]
+    if not rows:
+        return 0.0
+    n = len(rows[0])
+    per = [sum(r[i] for r in rows) for i in range(max(n - 1, 1))]
     return -sum(per) / len(per)
 
 
@@ -65,12 +79,10 @@ def build(snapshot: dict) -> dict:
         if not b["lines"] and not b["depots"]:
             k["unused"] += 1
             k["unusedCost"] += b["cost"]
-    edges = infra.get("edges") or {}
     return {
         "date": snapshot.get("date"), "scale": scale, "financeUpkeep": finance, "rawTotal": raw_total,
         "buildings": buildings, "kinds": kinds,
-        "street": (edges.get("street") or {}).get("cost", 0) * scale,
-        "track": (edges.get("track") or {}).get("cost", 0) * scale,
+        "street": _finance_row(snapshot, "routes ("), "track": _finance_row(snapshot, "voies ferrées"),
         "other": (infra.get("other") or {}).get("cost", 0) * scale,
         "otherSamples": (infra.get("other") or {}).get("samples") or [],
     }

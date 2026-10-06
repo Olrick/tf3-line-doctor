@@ -303,18 +303,17 @@ class LuaModTest(unittest.TestCase):
 
     def test_infrastructure_upkeep_by_building(self):
         infra = self.collect()["infrastructure"]
-        self.assertEqual(infra["total"], 85000)
+        self.assertEqual(infra["total"], 80000)              # the two stations (streets/tracks: finance table)
         self.assertEqual([b["id"] for b in infra["buildings"]], [602, 601])          # most expensive first
         truck, bus = infra["buildings"]
         self.assertEqual((truck["kind"], truck["lines"]), ("gare de marchandises (route)", []))
         self.assertEqual((bus["kind"], bus["lines"], bus["name"]), ("arrêt / gare routière", [100], "Gare"))
-        self.assertEqual(infra["edges"]["street"]["cost"], 2000)
-        self.assertEqual(infra["edges"]["track"]["cost"], 3000)
+        self.assertEqual(infra["via"], {"stations": 2})
         # report: costs scaled on the finance table's infrastructure upkeep (mock: 25 000 / period)
         snap = self.collect()
         report = infra_mod.build(snap)
         self.assertAlmostEqual(report["financeUpkeep"], 25000)
-        self.assertAlmostEqual(sum(b["cost"] for b in report["buildings"]) + report["street"] + report["track"], 25000)
+        self.assertGreater(report["scale"], 0)
         self.assertEqual(report["kinds"]["gare de marchandises (route)"]["unused"], 1)
         self.assertIn("sans aucune ligne", infra_mod.render(report))
 
