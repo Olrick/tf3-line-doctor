@@ -8,7 +8,7 @@ local YEAR = 1461000 -- value observed in game
 local NUM_CARGO_TYPES = 37
 local NOW = 5 * YEAR
 
-local C = { LINE = 1, GAME_TIME = 2, TRANSPORT_VEHICLE = 3, ACCOUNT = 4, SIM_CARGO = 5, SIM_ENTITY_AT_VEHICLE = 6, CONSTRUCTION = 7, SIM_ENTITY_AT_TERMINAL = 8 }
+local C = { LINE = 1, GAME_TIME = 2, TRANSPORT_VEHICLE = 3, ACCOUNT = 4, SIM_CARGO = 5, SIM_ENTITY_AT_VEHICLE = 6, CONSTRUCTION = 7, SIM_ENTITY_AT_TERMINAL = 8, MAINTENANCE_COST = 9, BASE_EDGE = 10, BASE_EDGE_STREET = 11 }
 
 -- a coal unit delivered by line 200 after a first leg on line 100 (sim 9002)
 local simCargo = {
@@ -87,10 +87,18 @@ for id in pairs(vehicles) do names[id] = "Vehicle " .. id end
 -- destination of sim 9002 (a construction): translation at transf[13..15]
 local constructions = {
 	[77] = { transf = { 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 1500, 2000, 10, 1 } },
+	-- a bus station used by line 100 and an unused truck station
+	[601] = { fileName = "station/street/bus_station.con", stations = { 701 }, depots = {} },
+	[602] = { fileName = "station/street/truck_station.con", stations = { 702 }, depots = {} },
 }
+local maintenance = { [601] = 30000, [602] = 50000, [801] = 2000, [802] = 3000 } -- 801 street, 802 track
+local stationGroupOf = { [701] = 1001, [702] = 2999 }
 
 local function component(e, t)
 	if t == C.CONSTRUCTION then return constructions[e] end
+	if t == C.MAINTENANCE_COST and maintenance[e] then return { maintenanceCost = maintenance[e] } end
+	if t == C.BASE_EDGE and (e == 801 or e == 802) then return {} end
+	if t == C.BASE_EDGE_STREET and e == 801 then return {} end
 	if t == C.SIM_CARGO then return simCargo[e] end
 	if t == C.SIM_ENTITY_AT_VEHICLE and e == 9002 then return { line = 200, vehicle = 22 } end
 	if t == C.SIM_ENTITY_AT_TERMINAL and e == 9003 then return { line = 200, lineStop0 = 0, lineStop1 = 1 } end
@@ -154,6 +162,7 @@ return {
 		getEntitiesWithComponent = function(t)
 			-- like the engine: sim entities cannot be iterated this way
 			if t == C.SIM_CARGO then error("Cannot loop over this component type") end
+			if t == C.MAINTENANCE_COST then return { 601, 602, 801, 802 } end
 			return {}
 		end,
 		entityExists = function() return true end,
@@ -212,7 +221,11 @@ return {
 				getConstructionEntityForSubconstruction = function() return -1 end,
 				getConstructionEntityForStation = function() return -1 end,
 			},
-			lineSystem = { getLinesForPlayer = function() return { 100, 200 } end },
+			lineSystem = {
+				getLinesForPlayer = function() return { 100, 200 } end,
+				getLinesForStationGroup = function(g) if g == 1001 then return { 100 } end return {} end,
+			},
+			stationGroupSystem = { getStationGroup = function(st) return stationGroupOf[st] end },
 			transportVehicleSystem = {
 				getLineVehicles = function(line) return lines[line].vehicles end,
 				getLineCargoInfo = function(line)

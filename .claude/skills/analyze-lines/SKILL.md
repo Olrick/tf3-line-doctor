@@ -26,6 +26,14 @@ python analyzer/chains.py --html out/chaines.html --cargo Bois
 
 puis ouvrir `out/chaines.html` dans le navigateur intégré.
 
+Pour l'économie de la compagnie : le rapport `analyze.py` affiche le tableau des finances du jeu (recettes,
+fonctionnement, entretien des véhicules et de l'infrastructure par mode, achats, constructions). Pour l'entretien
+bâtiment par bâtiment (gares sans ligne, bâtiments coûteux) :
+
+```bash
+python analyzer/infra.py --html out/infrastructure.html
+```
+
 Pour une ligne précise, lire aussi ses données brutes dans l'export (`lines[]` où `name` correspond) :
 temps de section réels vs théoriques, attente par arrêt, capacités et âge de chaque véhicule, modes de chargement.
 

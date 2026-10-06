@@ -375,6 +375,86 @@ local function collectFinanceTable(api, player)
 	return out
 end
 
+-- Infrastructure upkeep, object by object: every building (station, depot, port, airport, ...) with its
+-- maintenance cost and the lines serving it; streets, tracks and anything else summed.
+local function kindOf(fileName)
+	local f = string.lower(tostring(fileName or ""))
+	local function has(x) return f:find(x, 1, true) ~= nil end
+	if has("depot") then return "dépôt" end
+	if has("maintenance") then return "station de maintenance" end
+	if has("airport") or has("airfield") or has("helipad") or has("heliport") then return "aéroport / héliport" end
+	if has("harbor") or has("harbour") or has("port") or has("water") then return "port" end
+	if has("truck") or has("cargo") then return "gare de marchandises (route)" end
+	if has("bus") or has("tram") or has("street") then return "arrêt / gare routière" end
+	if has("rail") or has("train") or has("station") then return "gare ferroviaire" end
+	if has("warehouse") then return "entrepôt" end
+	return "autre bâtiment"
+end
+
+local function collectInfrastructure(api, player)
+	local C = api.type.ComponentType
+	local sys = api.engine.system
+	local entities = try("maintenance entities (owned)", function()
+		return api.engine.getEntitiesWithComponent(C.MAINTENANCE_COST, { requireOwnedByPlayer = player })
+	end)
+	if entities == nil then
+		entities = try("maintenance entities", api.engine.getEntitiesWithComponent, C.MAINTENANCE_COST)
+	end
+	if entities == nil then return nil end
+
+	local out = { buildings = {}, edges = { street = { cost = 0, count = 0 }, track = { cost = 0, count = 0 } },
+		other = { cost = 0, count = 0, samples = {} }, total = 0, entities = #list(entities) }
+	for _, e in ipairs(list(entities)) do
+		pcall(function()
+			local mc = api.engine.getComponent(e, C.MAINTENANCE_COST)
+			local cost = mc and num(mc.maintenanceCost) or 0
+			if cost == 0 then return end
+			out.total = out.total + cost
+			local con = api.engine.getComponent(e, C.CONSTRUCTION)
+			if con then
+				local b = { id = e, cost = cost, file = tostring(con.fileName), kind = kindOf(con.fileName),
+					name = try("building name", api.engine.util.getEntityName, e), groups = {}, lines = {} }
+				local seenGroup, seenLine = {}, {}
+				for _, st in ipairs(list(con.stations)) do
+					local g = try("station group", sys.stationGroupSystem.getStationGroup, st)
+					if g and not seenGroup[g] then
+						seenGroup[g] = true
+						b.groups[#b.groups + 1] = g
+						if #b.groups == 1 then -- the station name the player sees beats the building's technical name
+							b.name = try("group name", api.engine.util.getEntityName, g) or b.name
+						end
+						for _, l in ipairs(list(try("lines of group", sys.lineSystem.getLinesForStationGroup, g))) do
+							if not seenLine[l] then
+								seenLine[l] = true
+								b.lines[#b.lines + 1] = l
+							end
+						end
+					end
+				end
+				b.depots = #list(con.depots)
+				out.buildings[#out.buildings + 1] = b
+				return
+			end
+			local edge = api.engine.getComponent(e, C.BASE_EDGE)
+			if edge then
+				local street = api.engine.getComponent(e, C.BASE_EDGE_STREET) ~= nil
+				local slot = street and out.edges.street or out.edges.track
+				slot.cost = slot.cost + cost
+				slot.count = slot.count + 1
+				return
+			end
+			out.other.cost = out.other.cost + cost
+			out.other.count = out.other.count + 1
+			if #out.other.samples < 20 then
+				out.other.samples[#out.other.samples + 1] = { id = e, cost = cost,
+					name = try("other name", api.engine.util.getEntityName, e) }
+			end
+		end)
+	end
+	table.sort(out.buildings, function(a, b) return a.cost > b.cost end)
+	return out
+end
+
 --- Collects the full snapshot.
 -- @param api the game api table
 -- @return a plain lua table ready for json encoding
@@ -412,6 +492,7 @@ function M.collect(api)
 	}
 
 	snapshot.financeTable = player and try("computeFinanceTable", collectFinanceTable, api, player)
+	snapshot.infrastructure = player and try("infrastructure", collectInfrastructure, api, player)
 
 	local stateEnum = try("TransportVehicleState enum", function() return api.type.enum.TransportVehicleState end)
 	local lineSystem = api.engine.system.lineSystem
