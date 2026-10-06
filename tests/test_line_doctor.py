@@ -166,6 +166,28 @@ class LuaModTest(unittest.TestCase):
         # a new period starts, sampled entities still watched
         self.assertEqual(self.lua.eval("saved.probe.samples[1]"), None)
 
+    def test_exports_continue_when_probe_file_is_unknown(self):
+        # the game only indexes mod files at application start: a new file is "not found" after a save reload
+        self.lua.execute(f"""
+            local real = ug_require
+            ug_require = function(name)
+                if name:find("ticket_probe") then error("module '" .. name .. "' not found") end
+                return real(name)
+            end
+            io = nil
+            app = nil
+            dofile("{lua_path(MOD / 'line_doctor.script.lua')}")
+            script = data()
+            saved = {{}}
+            stateObj = {{ get = function() return saved end, set = function(_, v) saved = v end }}
+            script.handleEvent({{}}, stateObj, "", "TransportVehicleSystem", "OnCalcTicketPrice", {{}})
+            script.update({{}}, stateObj, 1)
+        """)
+        log_text = "\n".join(self.lua.eval("logLines").values())
+        snap = analyze.extract_from_log(log_text)
+        self.assertIsNotNone(snap)
+        self.assertIn("restart", snap["ticketProbe"]["error"])
+
     def test_log_fallback_is_parsed_by_analyzer(self):
         self.lua.execute(f"""
             io = nil

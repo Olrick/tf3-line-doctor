@@ -17,7 +17,10 @@
 
 local collector = ug_require "olrick_line_doctor_1::/line_doctor/collector.lua"
 local json = ug_require "olrick_line_doctor_1::/line_doctor/json.lua"
-local probe = ug_require "olrick_line_doctor_1::/line_doctor/ticket_probe.lua"
+-- optional: a file added to the mod is only known to the game after an application restart
+-- (reloading a save is not enough), so a missing probe must not stop the exports
+local okProbeModule, probe = pcall(ug_require, "olrick_line_doctor_1::/line_doctor/ticket_probe.lua")
+if not okProbeModule then probe = nil end
 
 local LOG_PREFIX = "[LineDoctor] "
 local LOG_CHUNK = 3000
@@ -146,14 +149,20 @@ function data()
 			-- record first, so that a failing export is not retried on every tick
 			s.lastExport = now
 			s.lastExportClock = realNow
-			local okProbe, ticketProbe = pcall(probe.takeSummary, api, s, now)
+			local ticketProbe
+			if probe then
+				local okProbe, summary = pcall(probe.takeSummary, api, s, now)
+				ticketProbe = okProbe and summary or { error = tostring(summary) }
+			else
+				ticketProbe = { error = "ticket_probe.lua not loaded: restart the game application" }
+			end
 			state:set(s)
-			export(reason, okProbe and ticketProbe or { error = tostring(ticketProbe) })
+			export(reason, ticketProbe)
 		end,
 
 		-- never returns a value: ticket prices are observed, not modified
 		handleEvent = function(_userParams, state, _src, id, name, param)
-			if name ~= "OnCalcTicketPrice" and name ~= "OnToArriveAtDestination" then return end
+			if probe == nil or (name ~= "OnCalcTicketPrice" and name ~= "OnToArriveAtDestination") then return end
 			pcall(function()
 				local gt = api.engine.getComponent(api.engine.util.getWorld(), api.type.ComponentType.GAME_TIME)
 				local s = state:get() or {}
