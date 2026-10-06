@@ -42,6 +42,15 @@ SLOW_CYCLE_MONTHS = 3        # round trip longer than this: monthly results are 
 TICKS_PER_SEC = 1000         # game time ticks are milliseconds (year = 1 461 000 ticks = 1 461 s)
 
 
+CONDITION_LEVELS = ["très mauvais", "mauvais", "moyen", "bon", "très bon"]
+
+
+def condition_label(state: float) -> str:
+    """Same banding as the game's vehicle window (5 levels of 20 %)."""
+    n = len(CONDITION_LEVELS)
+    return CONDITION_LEVELS[min(n, max(1, math.ceil(state * n))) - 1]
+
+
 @dataclass
 class Finding:
     code: str
@@ -353,7 +362,7 @@ def diagnose(m: dict, shared: dict[int, list[str]], transfers: dict | None = Non
     if m["minMaintenanceState"] is not None and m["minMaintenanceState"] < LOW_MAINTENANCE_STATE:
         state = m["minMaintenanceState"]
         add(Finding("POOR_MAINTENANCE", "major" if state < 0.25 else "minor",
-                    f"État des véhicules : {state:.0%} (identique à l'état affiché en jeu).",
+                    f"État des véhicules : {state:.0%} (« {condition_label(state)} » en jeu).",
                     "Un véhicule mal entretenu coûte plus cher à faire rouler, roule moins vite et offre moins de confort : "
                     "rattacher la ligne à une station de maintenance (vérifier sa capacité)."))
 

@@ -229,6 +229,12 @@ class AnalyzerFixtureTest(unittest.TestCase):
         self.assertNotIn("TRANSFER_DEPENDENT", by_name["Isolée"])
         self.assertNotIn("TRANSFER_DEPENDENT", by_name["Intercité"])  # profitable: nothing to explain
 
+    def test_condition_label_matches_game(self):
+        # observed in game: 0 % = very bad, 62 % = good
+        self.assertEqual(analyze.condition_label(0.0), "très mauvais")
+        self.assertEqual(analyze.condition_label(0.62), "bon")
+        self.assertEqual(analyze.condition_label(1.0), "très bon")
+
     def test_sample_fixture(self):
         snap = analyze.load_snapshot(str(ROOT / "tests" / "fixtures" / "sample_export.json"))
         result = analyze.analyze(snap)
