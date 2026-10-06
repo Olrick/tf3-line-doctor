@@ -12,7 +12,7 @@
 
 local M = {}
 
-M.SCHEMA_VERSION = 1
+M.SCHEMA_VERSION = 2
 
 local errors
 
@@ -153,8 +153,14 @@ local function collectVehicle(api, vehicle, now, yearTicks, stateEnum)
 		end
 		return caps
 	end)
-	v.loaded = try("getVehicleSimEntitiesCount",
-		api.engine.system.simEntityAtVehicleSystem.getVehicleSimEntitiesCount, vehicle)
+	-- the engine returns one count per cargo type (1-based, entry i = cargo type i - 1)
+	v.loaded = try("getVehicleSimEntitiesCount", function()
+		local counts = api.engine.system.simEntityAtVehicleSystem.getVehicleSimEntitiesCount(vehicle)
+		if type(counts) == "number" then return counts end
+		local total = 0
+		for _, c in ipairs(list(counts)) do total = total + (num(c) or 0) end
+		return total
+	end)
 	v.runningCostPerYear = try("getRunningCost", api.engine.util.vehicle.getRunningCost, vehicle)
 	v.speed = try("getSpeed", api.engine.util.vehicle.getSpeed, vehicle)
 
@@ -172,6 +178,36 @@ local function collectVehicle(api, vehicle, now, yearTicks, stateEnum)
 		return parts
 	end)
 	return v
+end
+
+local function pairList(v)
+	local r = {}
+	for _, p in ipairs(list(v)) do r[#r + 1] = { p[1], p[2] } end
+	return r
+end
+
+local function collectLineCargo(api, line, cargoId, capacity, used, numStops)
+	local sys = api.engine.system
+	local entry = { used = used, capacity = capacity }
+	local info = try("getLineCargoInfo", sys.transportVehicleSystem.getLineCargoInfo, line, cargoId)
+	if info then
+		entry.frequency = info.frequency
+		entry.numVehicles = info.numVehicles
+		entry.totalCapacity = info.totalCapacity
+		entry.comfortFactor = info.comfortFactor
+		entry.priceFactor = info.priceFactor
+		entry.sectionTimesSec = try("sectionTimes", list, info.sectionTimes)
+		entry.driveSectionTimesSec = try("driveSectionTimes", list, info.driveSectionTimes)
+		-- real times are {time, sampleCount} pairs
+		entry.realSectionTimes = try("realSectionTimes", pairList, info.realSectionTimes)
+		entry.driveRealSectionTimes = try("driveRealSectionTimes", pairList, info.driveRealSectionTimes)
+	end
+	entry.waitingPerStop = {}
+	for i = 1, numStops do
+		entry.waitingPerStop[i] = try("getLineStopSimEntitiesCount",
+			sys.simEntityAtTerminalSystem.getLineStopSimEntitiesCount, line, i - 1, cargoId) or 0
+	end
+	return entry
 end
 
 local function collectLine(api, line, now, yearTicks, cargoIdsSeen, stateEnum)
@@ -224,41 +260,15 @@ local function collectLine(api, line, now, yearTicks, cargoIdsSeen, stateEnum)
 
 	-- per cargo type: capacity use, timings and people/cargo waiting per stop
 	L.cargo = {}
+	-- the engine returns a 1-based list where entry i is cargo type i - 1 (passengers = type 0 = entry 1)
 	local usages = try("getLineCapacityUsages", util.line.getLineCapacityUsages, line, false)
-	for cargoId, usage in pairs(map(usages)) do
-		local id = tonumber(cargoId) or cargoId
-		cargoIdsSeen[id] = true
-		local info = try("getLineCargoInfo", sys.transportVehicleSystem.getLineCargoInfo, line, id)
-		local entry = {
-			used = usage and num(usage.used),
-			capacity = usage and num(usage.capacity),
-		}
-		if info then
-			entry.frequency = info.frequency
-			entry.numVehicles = info.numVehicles
-			entry.totalCapacity = info.totalCapacity
-			entry.comfortFactor = info.comfortFactor
-			entry.priceFactor = info.priceFactor
-			entry.sectionTimesSec = try("sectionTimes", function() return list(info.sectionTimes) end)
-			entry.driveSectionTimesSec = try("driveSectionTimes", function() return list(info.driveSectionTimes) end)
-			-- real times are {time, sampleCount} pairs
-			entry.realSectionTimes = try("realSectionTimes", function()
-				local r = {}
-				for _, p in ipairs(list(info.realSectionTimes)) do r[#r + 1] = { p[1], p[2] } end
-				return r
-			end)
-			entry.driveRealSectionTimes = try("driveRealSectionTimes", function()
-				local r = {}
-				for _, p in ipairs(list(info.driveRealSectionTimes)) do r[#r + 1] = { p[1], p[2] } end
-				return r
-			end)
+	for index, usage in ipairs(list(usages)) do
+		local capacity, used = num(usage and usage.capacity) or 0, num(usage and usage.used) or 0
+		if capacity > 0 or used > 0 then
+			local cargoId = index - 1
+			cargoIdsSeen[cargoId] = true
+			L.cargo[tostring(cargoId)] = collectLineCargo(api, line, cargoId, capacity, used, #L.stops)
 		end
-		entry.waitingPerStop = {}
-		for i = 1, #L.stops do
-			entry.waitingPerStop[i] = try("getLineStopSimEntitiesCount",
-				sys.simEntityAtTerminalSystem.getLineStopSimEntitiesCount, line, i - 1, id) or 0
-		end
-		L.cargo[tostring(cargoId)] = entry
 	end
 
 	-- vehicles

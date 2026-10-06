@@ -36,6 +36,7 @@ LOW_MAINTENANCE_STATE = 0.5
 LONG_INTERVAL_SEC = 600      # passenger lines: one vehicle every 10 min or worse
 SHORT_SECTION_SEC = 45       # average drive time between stops
 DECLINE_RATIO = 0.25         # net result dropped by more than 25 % of revenue
+YOUNG_LINE_MONTHS = 6        # below this, structural verdicts are premature
 
 
 @dataclass
@@ -91,15 +92,31 @@ def extract_from_log(text: str) -> dict | None:
     return snapshot
 
 
+def upgrade_snapshot(snap: dict) -> dict:
+    """Schema 1 stored line cargo under the engine's 1-based list index (index = cargo type + 1)."""
+    if snap.get("schemaVersion", 1) < 2:
+        for line in snap.get("lines") or []:
+            cargo = {}
+            for k, c in (line.get("cargo") or {}).items():
+                if _num(c.get("capacity")) > 0 or _num(c.get("used")) > 0:
+                    cargo[str(int(k) - 1)] = c
+            line["cargo"] = cargo
+            for v in line.get("vehicles") or []:
+                if isinstance(v.get("loaded"), list):
+                    v["loaded"] = sum(_num(x) for x in v["loaded"])
+        snap["schemaVersion"] = 2
+    return snap
+
+
 def load_snapshot(path: str) -> dict:
     text = Path(path).read_text(encoding="utf-8", errors="replace")
     stripped = text.lstrip()
     if stripped.startswith("{"):
-        return json.loads(text)
+        return upgrade_snapshot(json.loads(text))
     snap = extract_from_log(text)
     if snap is None:
         raise ValueError(f"No Line Doctor export found in {path}")
-    return snap
+    return upgrade_snapshot(snap)
 
 
 # --- metrics ----------------------------------------------------------------------------------
@@ -168,6 +185,12 @@ def line_metrics(line: dict, passenger_id: str | None) -> dict:
     drive_real_total = _sum_valid(drive_real)
     drive_expected_total = sum(drive_expected) if drive_expected else None
 
+    monthly = fin.get("monthlyNet") or []
+    first_active = next((i for i, x in enumerate(monthly) if x), None)
+    active_months = (len(monthly) - first_active) if first_active is not None else 0
+    oldest_part = max(ages) if ages else None
+    age_months = min(active_months, oldest_part * 12) if oldest_part is not None else active_months
+
     is_passenger = passenger_id is not None and passenger_id in cargo
     income = last.get("income")
     net = last.get("net")
@@ -186,7 +209,10 @@ def line_metrics(line: dict, passenger_id: str | None) -> dict:
         "income12m": income,
         "costs12m": costs,
         "netPrev12m": prev.get("net"),
-        "monthlyNet": fin.get("monthlyNet"),
+        "monthlyNet": monthly,
+        "ageMonths": age_months,
+        "young": age_months < YOUNG_LINE_MONTHS,
+        "lastMonthsNet": monthly[-2:],
         "netPerVehicle": (net / len(vehicles)) if (net is not None and vehicles) else None,
         "costCoverage": (income / -costs) if (income is not None and costs) else None,
         "intervalSec": line.get("intervalSec"),
@@ -208,6 +234,8 @@ def line_metrics(line: dict, passenger_id: str | None) -> dict:
         "avgVehicleAgeYears": (sum(ages) / len(ages)) if ages else None,
         "minMaintenanceState": min(maint) if maint else None,
         "stoppedVehicles": sum(1 for v in vehicles if v.get("userStopped")),
+        "neverDeparted": sum(1 for v in vehicles if not _num(v.get("lastLineStopDeparture"))),
+        "stuckAtTerminal": sum(1 for v in vehicles if _num(v.get("daysAtTerminal")) >= 5),
         "noPathVehicles": sum(1 for v in vehicles if v.get("noPath")),
         "vehiclesInDepot": sum(1 for v in vehicles if str(v.get("state")) in ("IN_DEPOT", "GOING_TO_DEPOT")),
         "loadModes": sorted({str(s.get("loadMode")) for s in (line.get("stops") or []) if s.get("loadMode") is not None}),
@@ -220,9 +248,18 @@ def line_metrics(line: dict, passenger_id: str | None) -> dict:
 
 # --- diagnostics ------------------------------------------------------------------------------
 
+STRUCTURAL = {"OVERCAPACITY", "COST_STRUCTURE", "EMPTY_RETURN", "LOW_FREQUENCY"}
+
+
 def diagnose(m: dict, shared: dict[int, list[str]]) -> list[Finding]:
     f: list[Finding] = []
-    add = f.append
+
+    def add(finding: Finding):
+        # on a young line demand is still building up: keep the hint, lower the alarm
+        if m["young"] and finding.code in STRUCTURAL and finding.severity in ("critical", "major"):
+            finding.severity = "minor"
+            finding.message = "(ligne récente, à confirmer) " + finding.message
+        f.append(finding)
 
     if m["vehicles"] == 0:
         add(Finding("NO_VEHICLES", "critical", "La ligne n'a aucun véhicule.",
@@ -238,6 +275,16 @@ def diagnose(m: dict, shared: dict[int, list[str]]) -> list[Finding]:
         add(Finding("IDLE_VEHICLES", "major",
                     f"{m['stoppedVehicles']} véhicule(s) arrêté(s), {m['vehiclesInDepot']} au dépôt.",
                     "Un véhicule immobilisé coûte sans rapporter : le relancer ou le vendre."))
+
+    if m["vehicles"] and m["neverDeparted"] == m["vehicles"] and m["ageMonths"] >= 1:
+        add(Finding("NEVER_DEPARTED", "critical",
+                    "Aucun véhicule n'a jamais enregistré de départ d'un arrêt de la ligne.",
+                    "Les véhicules ne bouclent pas leur service : regarder dans le jeu où ils sont bloqués "
+                    "(arrêt inaccessible ou du mauvais côté, demi-tour impossible, sens unique, quai saturé).",
+                    {"stuckAtTerminal": m["stuckAtTerminal"]}))
+    elif m["stuckAtTerminal"]:
+        add(Finding("STUCK_AT_TERMINAL", "major", f"{m['stuckAtTerminal']} véhicule(s) à l'arrêt depuis 5 jours ou plus.",
+                    "Vérifier les temps d'attente/chargement complet et l'accès à l'arrêt."))
 
     util = m["utilisation"]
     if util is not None and util < LOW_UTILISATION and m["vehicles"] > 1:
@@ -299,13 +346,21 @@ def diagnose(m: dict, shared: dict[int, list[str]]) -> list[Finding]:
                     "véhicules moins chers, ligne plus longue, ou autre mode de transport."))
 
     net, prev = m["net12m"], m["netPrev12m"]
-    if net is not None and prev is not None and m["income12m"]:
+    if net is not None and prev and m["income12m"]:
         if prev - net > DECLINE_RATIO * abs(m["income12m"]):
             add(Finding("DECLINING", "minor", f"Résultat en baisse : {prev:,.0f} → {net:,.0f} sur 12 mois.",
                         "Chercher ce qui a changé : nouvelle ligne concurrente, véhicules ajoutés, industrie fermée."))
-    if prev in (None, 0) and m["monthlyNet"] and sum(1 for x in m["monthlyNet"] if x) < 6:
-        add(Finding("YOUNG_LINE", "info", "Ligne récente : moins de 6 mois de données.",
+    if m["young"]:
+        add(Finding("YOUNG_LINE", "info", f"Ligne récente : environ {m['ageMonths']:.0f} mois d'exploitation.",
                     "Attendre quelques mois avant de conclure, le démarrage inclut souvent des coûts sans recettes."))
+    recent = [x for x in m["lastMonthsNet"] if x is not None]
+    if net is not None and net < 0 and len(recent) == 2 and all(x > 0 for x in recent):
+        add(Finding("RECOVERING", "info", f"Bénéficiaire sur les 2 derniers mois ({', '.join(_money(x) for x in recent)}).",
+                    "Le déficit sur 12 mois vient surtout du démarrage : surveiller avant de modifier la ligne."))
+    elif len(recent) == 2 and all(x < 0 for x in recent) and m["income12m"] == 0 and m["vehicles"]:
+        add(Finding("NO_REVENUE", "major", "Aucune recette alors que les véhicules circulent.",
+                    "Personne ne monte : vérifier que les arrêts couvrent des zones habitées/de destination, "
+                    "qu'il existe une demande entre ces arrêts et que le trajet n'est pas plus lent qu'à pied."))
 
     overlaps = shared.get(m["id"]) or []
     if overlaps:
@@ -327,6 +382,22 @@ def shared_station_map(metrics: list[dict]) -> dict[int, list[str]]:
             sb = {s for s in b["stationGroups"] if s is not None}
             if len(sa & sb) >= max(2, math.ceil(0.5 * len(sa))):
                 out.setdefault(a["id"], []).append(str(b["name"]))
+    return out
+
+
+def common_deficit_stops(metrics: list[dict]) -> list[dict]:
+    """Stops shared by several deficit lines and by no profitable line: a likely common cause."""
+    deficit = [m for m in metrics if _num(m["net12m"]) < 0]
+    profitable = {s for m in metrics if _num(m["net12m"]) >= 0 for s in m["stationGroups"]}
+    out = []
+    names = {}
+    for m in deficit:
+        for sg, name in zip(m["stationGroups"], m["stationNames"]):
+            names[sg] = name
+    for sg in names:
+        users = [m["name"] for m in deficit if sg in m["stationGroups"]]
+        if len(users) >= 2 and sg not in profitable:
+            out.append({"stationGroup": sg, "station": names[sg], "deficitLines": users})
     return out
 
 
@@ -353,6 +424,7 @@ def analyze(snapshot: dict) -> dict:
             "deficitLines": sum(1 for l in lines if _num(l["metrics"]["net12m"]) < 0),
             "totalNet12m": total_net,
         },
+        "commonDeficitStops": common_deficit_stops(metrics),
         "lines": lines,
     }
 
@@ -379,6 +451,9 @@ def to_markdown(result: dict, only_deficit: bool = False) -> str:
     out.append(f"- Trains bloqués : {net.get('blockedTrains', 'n/a')} — Véhicules sans chemin : {net.get('noPathVehicles', 'n/a')}")
     if result["exportErrors"]:
         out.append(f"- ⚠️ {len(result['exportErrors'])} erreur(s) API pendant l'export (voir exportErrors)")
+    for c in result.get("commonDeficitStops") or []:
+        out.append(f"- 🔎 Arrêt commun aux lignes déficitaires (et à aucune ligne rentable) : **{c['station']}** "
+                   f"({', '.join(c['deficitLines'])})")
     out.append("")
     out.append("| Ligne | Type | Véh. | Résultat 12m | Recettes | Coûts | Couverture | Utilisation | Remplissage | Intervalle |")
     out.append("|---|---|---|---|---|---|---|---|---|---|")

@@ -4,7 +4,8 @@
 --   200 "Coal A"  : 2 trucks, crowded stop, profitable          -> UNDERCAPACITY expected
 -- One api call (getBlockedTrains) throws, to check error capture.
 
-local YEAR = 730000
+local YEAR = 1461000 -- value observed in game
+local NUM_CARGO_TYPES = 37
 local NOW = 5 * YEAR
 
 local C = { LINE = 1, GAME_TIME = 2, TRANSPORT_VEHICLE = 3, ACCOUNT = 4 }
@@ -81,7 +82,10 @@ return {
 	},
 	res = {
 		cargoTypeRep = {
-			get = function(id) return { name = (id == 0) and "Passengers" or "Coal" } end,
+			get = function(id)
+				if id < 0 or id >= NUM_CARGO_TYPES then error("Index " .. id .. " out of bounds") end
+				return { name = (id == 0) and "Passengers" or "Coal" }
+			end,
 			getName = function(id) return "cargo_" .. id end,
 			getPassengerCargoTypeId = function() return 0 end,
 		},
@@ -110,9 +114,12 @@ return {
 			line = {
 				getMaxFrequency = function(line) return line == 100 and 1 / 900 or 1 / 240 end,
 				calcLineStationThroughput = function(line) return lines[line].rate end,
+				-- like the engine: 1-based list over ALL cargo types, entry i = cargo type i - 1
 				getLineCapacityUsages = function(line)
 					local l, out = lines[line], {}
-					for cargo, cap in pairs(l.capacity) do out[cargo] = { used = l.used[cargo], capacity = cap } end
+					for i = 1, NUM_CARGO_TYPES do
+						out[i] = { used = l.used[i - 1] or 0, capacity = l.capacity[i - 1] or 0 }
+					end
 					return out
 				end,
 				getLineIssues = function() return {} end,
@@ -145,7 +152,13 @@ return {
 				getLineStopSimEntitiesCount = function(line, stopIndex) return lines[line].waiting[stopIndex + 1] end,
 			},
 			simEntityAtVehicleSystem = {
-				getVehicleSimEntitiesCount = function(v) return vehicles[v].loaded end,
+				-- like the engine: one count per cargo type
+				getVehicleSimEntitiesCount = function(v)
+					local out = {}
+					for i = 1, NUM_CARGO_TYPES do out[i] = 0 end
+					out[1] = vehicles[v].loaded
+					return out
+				end,
 			},
 			landVehicleMoveSystem = {
 				getBlockedTrains = function() error("not available in mock") end,

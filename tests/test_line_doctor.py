@@ -67,7 +67,7 @@ class LuaModTest(unittest.TestCase):
 
     def test_collect_snapshot(self):
         snap = self.collect()
-        self.assertEqual(snap["schemaVersion"], 1)
+        self.assertEqual(snap["schemaVersion"], 2)
         self.assertEqual([l["name"] for l in snap["lines"]], ["Bus 1", "Coal A"])
         bus = snap["lines"][0]
         self.assertEqual(len(bus["vehicles"]), 4)
@@ -77,6 +77,10 @@ class LuaModTest(unittest.TestCase):
         self.assertEqual(bus["cargo"]["0"]["waitingPerStop"], [2, 1])
         self.assertAlmostEqual(bus["vehicles"][0]["parts"][0]["ageYears"], 30)
         self.assertEqual(bus["vehicles"][0]["state"], "EN_ROUTE")
+        self.assertEqual(bus["vehicles"][0]["loaded"], 5)
+        self.assertEqual(list(bus["cargo"]), ["0"])  # only cargo types with capacity, keyed by real type id
+        # only the two expected failures (no out-of-range cargo ids)
+        self.assertEqual(len(snap["errors"]), 2, snap["errors"])
         self.assertEqual(snap["lines"][1]["vehicles"][0]["capacities"], {"5": 20})
         self.assertEqual(snap["cargoNames"], {"0": "Passengers", "5": "Coal"})
         # the failing api call is captured, not fatal
@@ -158,6 +162,25 @@ class LuaModTest(unittest.TestCase):
 
 
 class AnalyzerFixtureTest(unittest.TestCase):
+    def test_schema1_upgrade_and_young_line(self):
+        monthly = [0] * 9 + [-2000, -4000, 1500]
+        line = {"id": 1, "name": "Bus", "stops": [{"stationGroup": 1}, {"stationGroup": 2}],
+                "cargo": {"1": {"capacity": 18, "used": 8}, "2": {"capacity": 0, "used": 0}},
+                "vehicles": [{"loaded": [3, 0], "parts": [{"ageYears": 0.3}]}] * 3,
+                "ratePerYear": 100, "transportedPerYear": 5,
+                "finance": {"last12Months": {"net": -4500, "income": 3000, "vehicleRunningCosts": -7500},
+                            "previous12Months": {"net": 0}, "monthlyNet": monthly}}
+        snap = analyze.upgrade_snapshot({"schemaVersion": 1, "passengerCargoTypeId": 0, "lines": [line]})
+        self.assertEqual(list(snap["lines"][0]["cargo"]), ["0"])
+        result = analyze.analyze(snap)
+        m = result["lines"][0]["metrics"]
+        self.assertEqual(m["kind"], "passengers")
+        self.assertTrue(m["young"])
+        codes = {f["code"]: f for f in result["lines"][0]["findings"]}
+        self.assertEqual(codes["OVERCAPACITY"]["severity"], "minor")  # downgraded on a young line
+        self.assertNotIn("DECLINING", codes)                           # no previous year to compare with
+        self.assertIn("YOUNG_LINE", codes)
+
     def test_sample_fixture(self):
         snap = analyze.load_snapshot(str(ROOT / "tests" / "fixtures" / "sample_export.json"))
         result = analyze.analyze(snap)

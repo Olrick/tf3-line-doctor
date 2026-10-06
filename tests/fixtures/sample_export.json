@@ -14,10 +14,10 @@
     "year": 1905
   },
   "errors": [
-    "getBuildVersion: ...d/olrick_line_doctor_1/content/line_doctor/collector.lua:319: attempt to call a nil value (global 'getBuildVersion')",
-    "getBlockedTrains: D:/Documents/OneDrive/TF3-AddOn Lua/tests/mock_api.lua:151: not available in mock"
+    "getBuildVersion: ...d/olrick_line_doctor_1/content/line_doctor/collector.lua:329: attempt to call a nil value (global 'getBuildVersion')",
+    "getBlockedTrains: D:/Documents/OneDrive/TF3-AddOn Lua/tests/mock_api.lua:164: not available in mock"
   ],
-  "gameTime": 3650000,
+  "gameTime": 7305000,
   "generator": "Line Doctor (olrick_line_doctor_1)",
   "lines": [
     {
@@ -72,18 +72,18 @@
           "vehicleRunningCosts": -50000
         },
         "monthlyNet": [
-          -2501,
-          -2501,
-          -2501,
-          -2501,
-          -2501,
-          -2501,
-          -2501,
-          -2501,
-          -2501,
-          -2501,
-          -2501,
-          -2501
+          -2500,
+          -2500,
+          -2500,
+          -2500,
+          -2500,
+          -2500,
+          -2500,
+          -2500,
+          -2500,
+          -2500,
+          -2500,
+          -2500
         ],
         "previous12Months": {
           "income": 24000,
@@ -140,7 +140,7 @@
           "daysInDepot": 0,
           "engineStopIndex": 0,
           "id": 11,
-          "lastLineStopDeparture": 3649000,
+          "lastLineStopDeparture": 7304000,
           "loaded": 5,
           "name": "Vehicle 11",
           "noPath": false,
@@ -170,7 +170,7 @@
           "daysInDepot": 0,
           "engineStopIndex": 0,
           "id": 12,
-          "lastLineStopDeparture": 3649000,
+          "lastLineStopDeparture": 7304000,
           "loaded": 5,
           "name": "Vehicle 12",
           "noPath": false,
@@ -200,7 +200,7 @@
           "daysInDepot": 0,
           "engineStopIndex": 0,
           "id": 13,
-          "lastLineStopDeparture": 3649000,
+          "lastLineStopDeparture": 7304000,
           "loaded": 5,
           "name": "Vehicle 13",
           "noPath": false,
@@ -230,7 +230,7 @@
           "daysInDepot": 0,
           "engineStopIndex": 0,
           "id": 14,
-          "lastLineStopDeparture": 3649000,
+          "lastLineStopDeparture": 7304000,
           "loaded": 5,
           "name": "Vehicle 14",
           "noPath": false,
@@ -373,7 +373,7 @@
           "daysInDepot": 0,
           "engineStopIndex": 0,
           "id": 21,
-          "lastLineStopDeparture": 3649000,
+          "lastLineStopDeparture": 7304000,
           "loaded": 19,
           "name": "Vehicle 21",
           "noPath": false,
@@ -403,7 +403,7 @@
           "daysInDepot": 0,
           "engineStopIndex": 0,
           "id": 22,
-          "lastLineStopDeparture": 3649000,
+          "lastLineStopDeparture": 7304000,
           "loaded": 19,
           "name": "Vehicle 22",
           "noPath": false,
@@ -431,7 +431,7 @@
     "noPathVehicles": 0
   },
   "passengerCargoTypeId": 0,
-  "schemaVersion": 1,
+  "schemaVersion": 2,
   "year": 1905,
-  "yearTicks": 730000
+  "yearTicks": 1461000
 }
