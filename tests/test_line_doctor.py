@@ -181,6 +181,32 @@ class AnalyzerFixtureTest(unittest.TestCase):
         self.assertNotIn("DECLINING", codes)                           # no previous year to compare with
         self.assertIn("YOUNG_LINE", codes)
 
+    def _cart_line(self, months_active, fleet_age_years=None):
+        monthly = [0] * (12 - months_active) + [-5000] * months_active
+        return {"id": 9, "name": "Légumes", "stops": [{"stationGroup": 1}, {"stationGroup": 2}],
+                "cargo": {"1": {"capacity": 30, "used": 0, "realSectionTimes": [[0, 0], [0, 0]],
+                                "driveSectionTimesSec": [602.0, 527.7]}},
+                "vehicles": [{"loaded": 0, "parts": [{"ageYears": fleet_age_years or months_active / 12}]}] * 5,
+                "finance": {"last12Months": {"net": -5000 * months_active, "income": 0},
+                            "previous12Months": {"net": 0}, "monthlyNet": monthly}}
+
+    def test_slow_line_not_flagged_as_stuck(self):
+        # 1130 s round trip = ~9.3 calendar months: 2 months without a trip is normal
+        result = analyze.analyze({"schemaVersion": 2, "yearTicks": 1461000, "lines": [self._cart_line(2)]})
+        codes = {f["code"] for f in result["lines"][0]["findings"]}
+        self.assertIn("FIRST_TRIP_PENDING", codes)
+        self.assertNotIn("NO_COMPLETED_TRIP", codes)
+        self.assertIn("SLOW_CYCLE", codes)
+        self.assertNotIn("NO_REVENUE", codes)      # no trip finished yet: nothing could be earned
+        self.assertNotIn("COST_STRUCTURE", codes)
+        self.assertAlmostEqual(result["lines"][0]["metrics"]["cycleMonths"], 1129.75 / 121.75, places=2)
+
+    def test_line_without_any_trip_for_too_long_is_stuck(self):
+        # two years (> 1.5 round trips) without a single measured section
+        result = analyze.analyze({"schemaVersion": 2, "yearTicks": 1461000, "lines": [self._cart_line(12, 2.0)]})
+        codes = {f["code"] for f in result["lines"][0]["findings"]}
+        self.assertIn("NO_COMPLETED_TRIP", codes)
+
     def test_sample_fixture(self):
         snap = analyze.load_snapshot(str(ROOT / "tests" / "fixtures" / "sample_export.json"))
         result = analyze.analyze(snap)

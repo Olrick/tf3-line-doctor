@@ -37,6 +37,9 @@ LONG_INTERVAL_SEC = 600      # passenger lines: one vehicle every 10 min or wors
 SHORT_SECTION_SEC = 45       # average drive time between stops
 DECLINE_RATIO = 0.25         # net result dropped by more than 25 % of revenue
 YOUNG_LINE_MONTHS = 6        # below this, structural verdicts are premature
+YOUNG_LINE_CYCLES = 2        # ... or fewer round trips than this
+SLOW_CYCLE_MONTHS = 3        # round trip longer than this: monthly results are lumpy
+TICKS_PER_SEC = 1000         # game time ticks are milliseconds (year = 1 461 000 ticks = 1 461 s)
 
 
 @dataclass
@@ -140,7 +143,7 @@ def _real_times(pairs) -> list[float]:
     return out
 
 
-def line_metrics(line: dict, passenger_id: str | None) -> dict:
+def line_metrics(line: dict, passenger_id: str | None, year_ticks: float = 1461000) -> dict:
     fin = (line.get("finance") or {})
     last = fin.get("last12Months") or {}
     prev = fin.get("previous12Months") or {}
@@ -181,6 +184,9 @@ def line_metrics(line: dict, passenger_id: str | None) -> dict:
         vals = [x for x in xs if not math.isnan(x)]
         return sum(vals) if vals else None
 
+    month_sec = year_ticks / 12 / TICKS_PER_SEC
+    measured = any(isinstance(p, list) and len(p) >= 2 and _num(p[1]) > 0
+                   for c in cargo.values() for p in (c.get("realSectionTimes") or []))
     real_total = _sum_valid(real)
     drive_real_total = _sum_valid(drive_real)
     drive_expected_total = sum(drive_expected) if drive_expected else None
@@ -189,7 +195,12 @@ def line_metrics(line: dict, passenger_id: str | None) -> dict:
     first_active = next((i for i, x in enumerate(monthly) if x), None)
     active_months = (len(monthly) - first_active) if first_active is not None else 0
     oldest_part = max(ages) if ages else None
-    age_months = min(active_months, oldest_part * 12) if oldest_part is not None else active_months
+    if oldest_part is None:
+        age_months = active_months
+    elif monthly and active_months == len(monthly):
+        age_months = oldest_part * 12  # older than the 12-month window: trust the fleet age
+    else:
+        age_months = min(active_months, oldest_part * 12)
 
     is_passenger = passenger_id is not None and passenger_id in cargo
     income = last.get("income")
@@ -198,7 +209,7 @@ def line_metrics(line: dict, passenger_id: str | None) -> dict:
     if last.get("vehicleRunningCosts") is not None or last.get("vehicleMaintenance") is not None:
         costs = _num(last.get("vehicleRunningCosts")) + _num(last.get("vehicleMaintenance"))
 
-    return {
+    m = {
         "id": line.get("id"),
         "name": line.get("name"),
         "kind": "passengers" if is_passenger and len(cargo) == 1 else ("mixed" if is_passenger else "cargo"),
@@ -211,7 +222,7 @@ def line_metrics(line: dict, passenger_id: str | None) -> dict:
         "netPrev12m": prev.get("net"),
         "monthlyNet": monthly,
         "ageMonths": age_months,
-        "young": age_months < YOUNG_LINE_MONTHS,
+        "young": None,  # set below, needs the cycle time
         "lastMonthsNet": monthly[-2:],
         "netPerVehicle": (net / len(vehicles)) if (net is not None and vehicles) else None,
         "costCoverage": (income / -costs) if (income is not None and costs) else None,
@@ -234,7 +245,7 @@ def line_metrics(line: dict, passenger_id: str | None) -> dict:
         "avgVehicleAgeYears": (sum(ages) / len(ages)) if ages else None,
         "minMaintenanceState": min(maint) if maint else None,
         "stoppedVehicles": sum(1 for v in vehicles if v.get("userStopped")),
-        "neverDeparted": sum(1 for v in vehicles if not _num(v.get("lastLineStopDeparture"))),
+        "sectionsMeasured": measured,
         "stuckAtTerminal": sum(1 for v in vehicles if _num(v.get("daysAtTerminal")) >= 5),
         "noPathVehicles": sum(1 for v in vehicles if v.get("noPath")),
         "vehiclesInDepot": sum(1 for v in vehicles if str(v.get("state")) in ("IN_DEPOT", "GOING_TO_DEPOT")),
@@ -244,6 +255,13 @@ def line_metrics(line: dict, passenger_id: str | None) -> dict:
         "stationGroups": [s.get("stationGroup") for s in (line.get("stops") or [])],
         "stationNames": [s.get("stationName") for s in (line.get("stops") or [])],
     }
+    cycle_sec = real_total if measured and real_total else drive_expected_total
+    m["cycleSec"] = cycle_sec
+    m["cycleMonths"] = (cycle_sec / month_sec) if cycle_sec else None
+    cycles_done = (age_months / m["cycleMonths"]) if m["cycleMonths"] else None
+    m["cyclesSinceStart"] = cycles_done
+    m["young"] = age_months < YOUNG_LINE_MONTHS or (cycles_done is not None and cycles_done < YOUNG_LINE_CYCLES)
+    return m
 
 
 # --- diagnostics ------------------------------------------------------------------------------
@@ -276,13 +294,19 @@ def diagnose(m: dict, shared: dict[int, list[str]]) -> list[Finding]:
                     f"{m['stoppedVehicles']} véhicule(s) arrêté(s), {m['vehiclesInDepot']} au dépôt.",
                     "Un véhicule immobilisé coûte sans rapporter : le relancer ou le vendre."))
 
-    if m["vehicles"] and m["neverDeparted"] == m["vehicles"] and m["ageMonths"] >= 1:
-        add(Finding("NEVER_DEPARTED", "critical",
-                    "Aucun véhicule n'a jamais enregistré de départ d'un arrêt de la ligne.",
+    # a section can only be measured once a vehicle drove it; allow the first trip from the depot
+    if m["vehicles"] and not m["sectionsMeasured"] and m["cycleMonths"]             and m["ageMonths"] > 1.5 * m["cycleMonths"] + 1:
+        add(Finding("NO_COMPLETED_TRIP", "critical",
+                    f"Aucune section parcourue en {m['ageMonths']:.0f} mois alors qu'un aller-retour "
+                    f"prend ~{m['cycleMonths']:.1f} mois.",
                     "Les véhicules ne bouclent pas leur service : regarder dans le jeu où ils sont bloqués "
                     "(arrêt inaccessible ou du mauvais côté, demi-tour impossible, sens unique, quai saturé).",
                     {"stuckAtTerminal": m["stuckAtTerminal"]}))
-    elif m["stuckAtTerminal"]:
+    elif m["vehicles"] and not m["sectionsMeasured"]:
+        add(Finding("FIRST_TRIP_PENDING", "info",
+                    f"Aucun trajet terminé pour l'instant (aller-retour ≈ {m['cycleMonths'] or 0:.1f} mois de calendrier).",
+                    "Normal au démarrage : attendre au moins un aller-retour avant de juger la ligne."))
+    if m["stuckAtTerminal"]:
         add(Finding("STUCK_AT_TERMINAL", "major", f"{m['stuckAtTerminal']} véhicule(s) à l'arrêt depuis 5 jours ou plus.",
                     "Vérifier les temps d'attente/chargement complet et l'accès à l'arrêt."))
 
@@ -339,7 +363,7 @@ def diagnose(m: dict, shared: dict[int, list[str]]) -> list[Finding]:
         add(Finding("EMPTY_RETURN", "minor", "Remplissage moyen proche de 50 % sur une ligne de fret.",
                     "Probable retour à vide : chercher une cargaison retour ou mutualiser avec une autre chaîne."))
 
-    if m["costCoverage"] is not None and m["costCoverage"] < 1 and util is not None and util >= LOW_UTILISATION:
+    if m["costCoverage"] is not None and m["costCoverage"] < 1 and util is not None and util >= LOW_UTILISATION             and m["sectionsMeasured"]:
         add(Finding("COST_STRUCTURE", "major",
                     f"Les recettes couvrent {m['costCoverage']:.0%} des coûts malgré une utilisation correcte.",
                     "Le matériel est trop coûteux pour ce trafic, ou les trajets sont trop courts : "
@@ -350,14 +374,20 @@ def diagnose(m: dict, shared: dict[int, list[str]]) -> list[Finding]:
         if prev - net > DECLINE_RATIO * abs(m["income12m"]):
             add(Finding("DECLINING", "minor", f"Résultat en baisse : {prev:,.0f} → {net:,.0f} sur 12 mois.",
                         "Chercher ce qui a changé : nouvelle ligne concurrente, véhicules ajoutés, industrie fermée."))
+    if m["cycleMonths"] and m["cycleMonths"] > SLOW_CYCLE_MONTHS:
+        add(Finding("SLOW_CYCLE", "info",
+                    f"Un aller-retour dure ~{m['cycleMonths']:.1f} mois de calendrier : les recettes arrivent par à-coups.",
+                    "Juger la ligne sur plusieurs cycles ; des véhicules plus rapides augmentent les rotations "
+                    "(et donc les recettes) à coût de fonctionnement annuel comparable."))
     if m["young"]:
-        add(Finding("YOUNG_LINE", "info", f"Ligne récente : environ {m['ageMonths']:.0f} mois d'exploitation.",
+        add(Finding("YOUNG_LINE", "info", f"Ligne récente : environ {m['ageMonths']:.0f} mois d'exploitation"
+                    + (f", {m['cyclesSinceStart']:.1f} aller-retour" if m["cyclesSinceStart"] is not None else "") + ".",
                     "Attendre quelques mois avant de conclure, le démarrage inclut souvent des coûts sans recettes."))
     recent = [x for x in m["lastMonthsNet"] if x is not None]
     if net is not None and net < 0 and len(recent) == 2 and all(x > 0 for x in recent):
         add(Finding("RECOVERING", "info", f"Bénéficiaire sur les 2 derniers mois ({', '.join(_money(x) for x in recent)}).",
                     "Le déficit sur 12 mois vient surtout du démarrage : surveiller avant de modifier la ligne."))
-    elif len(recent) == 2 and all(x < 0 for x in recent) and m["income12m"] == 0 and m["vehicles"]:
+    elif len(recent) == 2 and all(x < 0 for x in recent) and m["income12m"] == 0 and m["vehicles"]             and m["sectionsMeasured"]:
         add(Finding("NO_REVENUE", "major", "Aucune recette alors que les véhicules circulent.",
                     "Personne ne monte : vérifier que les arrêts couvrent des zones habitées/de destination, "
                     "qu'il existe une demande entre ces arrêts et que le trajet n'est pas plus lent qu'à pied."))
@@ -404,7 +434,8 @@ def common_deficit_stops(metrics: list[dict]) -> list[dict]:
 def analyze(snapshot: dict) -> dict:
     pid = snapshot.get("passengerCargoTypeId")
     passenger_id = str(pid) if pid is not None else None
-    metrics = [line_metrics(l, passenger_id) for l in snapshot.get("lines") or []]
+    year_ticks = _num(snapshot.get("yearTicks"), 1461000) or 1461000
+    metrics = [line_metrics(l, passenger_id, year_ticks) for l in snapshot.get("lines") or []]
     shared = shared_station_map(metrics)
     lines = []
     for m in metrics:
@@ -455,16 +486,17 @@ def to_markdown(result: dict, only_deficit: bool = False) -> str:
         out.append(f"- 🔎 Arrêt commun aux lignes déficitaires (et à aucune ligne rentable) : **{c['station']}** "
                    f"({', '.join(c['deficitLines'])})")
     out.append("")
-    out.append("| Ligne | Type | Véh. | Résultat 12m | Recettes | Coûts | Couverture | Utilisation | Remplissage | Intervalle |")
-    out.append("|---|---|---|---|---|---|---|---|---|---|")
+    out.append("| Ligne | Type | Véh. | Résultat 12m | Recettes | Coûts | Couverture | Utilisation | Remplissage | Intervalle | Aller-retour |")
+    out.append("|---|---|---|---|---|---|---|---|---|---|---|")
     for l in result["lines"]:
         m = l["metrics"]
         if only_deficit and _num(m["net12m"]) >= 0:
             continue
         interval = f"{m['intervalSec'] / 60:.1f} min" if m["intervalSec"] else "n/a"
+        cycle = f"{m['cycleMonths']:.1f} mois" if m["cycleMonths"] else "n/a"
         out.append(f"| {m['name']} | {m['kind']} | {m['vehicles']} | {_money(m['net12m'])} | {_money(m['income12m'])} | "
                    f"{_money(m['costs12m'])} | {_pct(m['costCoverage'])} | {_pct(m['utilisation'])} | "
-                   f"{_pct(m['loadFactorNow'])} | {interval} |")
+                   f"{_pct(m['loadFactorNow'])} | {interval} | {cycle} |")
     out.append("")
     for l in result["lines"]:
         m = l["metrics"]

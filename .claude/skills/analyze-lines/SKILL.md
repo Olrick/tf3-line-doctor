@@ -22,6 +22,12 @@ temps de section réels vs théoriques, attente par arrêt, capacités et âge d
 
 ## 2. Raisonner
 
+**Échelle de temps (vérifiée en jeu) :** une année de calendrier = 1 461 s de jeu, donc **1 mois ≈ 122 s**.
+Les temps de section (`sectionTimesSec`, `realSectionTimes`) sont en secondes de jeu : une section de 550 s
+dure ~4,5 mois de calendrier. Sur une ligne lente, les recettes arrivent par à-coups à chaque fin de trajet et
+le résultat d'un mois isolé ne veut rien dire : raisonner en allers-retours (colonne « Aller-retour »).
+`lastLineStopDeparture` peut rester à 0 même quand la ligne fonctionne : ne pas s'en servir pour conclure à un blocage.
+
 Les diagnostics de l'analyseur sont des **indices heuristiques**, pas des verdicts. Pour chaque ligne déficitaire :
 
 1. Recouper les indicateurs : une ligne peut être en sur-capacité (utilisation faible) *et* mal placée (peu de demande).
