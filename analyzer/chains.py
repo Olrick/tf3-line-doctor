@@ -164,9 +164,10 @@ def render(chains: list[Chain], meta: dict, title="Chaînes de transport") -> st
                 f"<td class='r'>{s.on_board:.0f} / {s.waiting_after:.0f}</td></tr>")
         per = c.price_sum / c.deliveries * meta["k"] if c.deliveries else None
         rate = ""
-        if c.deliveries and c.first is not None and c.last and c.last > c.first:
-            rate = f" · ≈ {c.deliveries / ((c.last - c.first) / year):.0f} livraisons/an"
-        status = (f"{c.deliveries} livraisons observées{rate} · ≈ {_m(per)} par unité livrée"
+        if c.deliveries and c.first is not None and c.last and (c.last - c.first) >= year / 6:
+            # only extrapolate over at least two months of observation
+            rate = f" · ≈ {c.deliveries / ((c.last - c.first) / year):.0f} unités/an"
+        status = (f"{c.deliveries} unités livrées observées{rate} · ≈ {_m(per)} par unité livrée"
                   if c.delivered else "<b class='neg'>jamais livrée depuis l'installation du mod</b> (chaîne neuve ou interrompue)")
         cards.append(f"""
 <section class="card">
