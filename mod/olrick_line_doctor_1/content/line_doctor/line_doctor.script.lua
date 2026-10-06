@@ -17,6 +17,7 @@
 
 local collector = ug_require "olrick_line_doctor_1::/line_doctor/collector.lua"
 local json = ug_require "olrick_line_doctor_1::/line_doctor/json.lua"
+local probe = ug_require "olrick_line_doctor_1::/line_doctor/ticket_probe.lua"
 
 local LOG_PREFIX = "[LineDoctor] "
 local LOG_CHUNK = 3000
@@ -82,13 +83,14 @@ local function writeToLog(compact)
 	log("LINE_DOCTOR_END")
 end
 
-local function export(reason)
+local function export(reason, ticketProbe)
 	local ok, snapshot = pcall(collector.collect, api)
 	if not ok then
 		log("collect failed: " .. tostring(snapshot))
 		return false
 	end
 	snapshot.exportReason = reason
+	snapshot.ticketProbe = ticketProbe
 
 	local pretty = json.encode(snapshot, "  ")
 	local compact = json.encode(snapshot)
@@ -115,6 +117,14 @@ function data()
 			end)
 			if not okTime or now == nil then return end
 
+			-- price and delivery events, observed only (see ticket_probe.lua)
+			pcall(function()
+				if not state:hasEventSubscriptions() then
+					state:subscribeToEvent("OnCalcTicketPrice")
+					state:subscribeToEvent("OnToArriveAtDestination")
+				end
+			end)
+
 			local s = state:get() or {}
 			local monthTicks = api.util.getDefaultMonthDuration()
 
@@ -136,11 +146,24 @@ function data()
 			-- record first, so that a failing export is not retried on every tick
 			s.lastExport = now
 			s.lastExportClock = realNow
+			local okProbe, ticketProbe = pcall(probe.takeSummary, api, s, now)
 			state:set(s)
-			export(reason)
+			export(reason, okProbe and ticketProbe or { error = tostring(ticketProbe) })
 		end,
 
-		handleEvent = function(_userParams, _state, _src, _id, _name)
+		-- never returns a value: ticket prices are observed, not modified
+		handleEvent = function(_userParams, state, _src, id, name, param)
+			if name ~= "OnCalcTicketPrice" and name ~= "OnToArriveAtDestination" then return end
+			pcall(function()
+				local gt = api.engine.getComponent(api.engine.util.getWorld(), api.type.ComponentType.GAME_TIME)
+				local s = state:get() or {}
+				if name == "OnCalcTicketPrice" then
+					probe.onTicketPrice(api, s, id, param, gt.gameTime)
+				else
+					probe.onArrive(api, s, id, param, gt.gameTime)
+				end
+				state:set(s)
+			end)
 		end,
 	}
 end

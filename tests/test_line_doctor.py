@@ -131,6 +131,41 @@ class LuaModTest(unittest.TestCase):
             self.assertEqual(len(lines), 2)
             self.assertEqual(json.loads(lines[1])["exportReason"], "refresh")
 
+    def test_ticket_probe_observes_without_changing_prices(self):
+        self.lua.execute(f"""
+            app = nil
+            dofile("{lua_path(MOD / 'line_doctor.script.lua')}")
+            script = data()
+            saved = {{}}
+            stateObj = {{ get = function() return saved end, set = function(_, v) saved = v end }}
+            r1 = script.handleEvent({{}}, stateObj, "", "TransportVehicleSystem", "OnCalcTicketPrice", {{
+                {{ vehicleEntity = 21, lineEntity = 200, simEntity = 9001, stockListEntity = -1, basePrice = 1000, distance = 500 }},
+                {{ vehicleEntity = 22, lineEntity = 200, simEntity = 9002, stockListEntity = 77, basePrice = 3000, distance = 1500 }},
+            }})
+            r2 = script.handleEvent({{}}, stateObj, "", "SimEntityAtVehicleSystem", "OnCalcTicketPrice", {{
+                {{ vehicleEntity = 11, lineEntity = 100, simEntity = 9100, basePrice = 50, distance = 300 }},
+            }})
+            r3 = script.handleEvent({{}}, stateObj, "", "SimCargoSystem", "OnToArriveAtDestination",
+                {{ entities = {{ {{ 9001, {{ 77, 0 }} }} }} }})
+        """)
+        for r in ("r1", "r2", "r3"):
+            self.assertIsNone(self.lua.eval(r), "a handler returning a value would change ticket prices")
+        summary = json.loads(self.lua.eval("""(function()
+            local probe = ug_require("olrick_line_doctor_1::/line_doctor/ticket_probe.lua")
+            local json = ug_require("olrick_line_doctor_1::/line_doctor/json.lua")
+            return json.encode(probe.takeSummary(api, saved, 5 * 1461000))
+        end)()"""))
+        coal = summary["lines"]["200"]
+        self.assertEqual((coal["events"], coal["final"], coal["transfer"], coal["basePriceSum"]), (2, 1, 1, 4000))
+        self.assertEqual(coal["name"], "Coal A")
+        self.assertIn("journalIncome", coal)
+        self.assertEqual(summary["lines"]["100"]["passenger"], 1)
+        self.assertEqual(summary["arrivals"]["cargo"], 1)
+        self.assertEqual(summary["arrivals"]["sampled"][0]["sim"], 9001)
+        self.assertEqual(len(summary["samples"]), 3)
+        # a new period starts, sampled entities still watched
+        self.assertEqual(self.lua.eval("saved.probe.samples[1]"), None)
+
     def test_log_fallback_is_parsed_by_analyzer(self):
         self.lua.execute(f"""
             io = nil
