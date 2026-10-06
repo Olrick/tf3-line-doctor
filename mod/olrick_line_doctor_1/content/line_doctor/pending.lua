@@ -17,6 +17,8 @@ local M = {}
 M.DEFAULT_FACTOR = 3.9  -- price per metre when a cargo type was never delivered yet (measured 3.3-5.0)
 M.DEFAULT_K = 0.804     -- booked income / computed price (measured)
 M.EMA = 0.1             -- weight of a new measurement
+M.MAX_CHAINS = 400      -- distinct delivered chains remembered (cargo type + sequence of lines)
+M.MAX_PREFIXES = 600    -- distinct partial chains reported per computation
 
 local function num(v)
 	if type(v) == "number" then return v end
@@ -77,10 +79,39 @@ local function calib(s)
 	return s.calib
 end
 
---- Learns the price factor of a cargo type from one real delivery (see ticket_probe cargoDetail).
+--- Chain key: cargo type and the sequence of lines, e.g. "12|1734>2207".
+function M.chainKey(cargoType, lineIds)
+	local parts = {}
+	for i, l in ipairs(lineIds) do parts[i] = tostring(l) end
+	return tostring(cargoType) .. "|" .. table.concat(parts, ">")
+end
+
+-- Remembers which complete chains really deliver (cumulated since the mod runs on the save).
+local function recordChain(s, detail)
+	local lines = {}
+	for i, seg in ipairs(detail.segments) do lines[i] = seg.line end
+	local key = M.chainKey(detail.cargoType, lines)
+	s.chains = s.chains or {}
+	local c = s.chains[key]
+	if c == nil then
+		local count = 0
+		for _ in pairs(s.chains) do count = count + 1 end
+		if count >= M.MAX_CHAINS then return end
+		c = { cargoType = detail.cargoType, lines = lines, n = 0, price = 0, first = detail.t }
+		s.chains[key] = c
+	end
+	c.n = c.n + 1
+	c.price = c.price + (detail.basePrice or 0)
+	c.last = detail.t
+end
+
+--- Learns from one real delivery (see ticket_probe cargoDetail): price factor of the cargo type and the
+--- chain of lines it used.
 function M.learnDelivery(s, detail)
 	local segs = detail and detail.segments
-	if not segs or #segs == 0 or not segs[1].pos or not detail.unloadPos or not detail.basePrice then return end
+	if not segs or #segs == 0 then return end
+	pcall(recordChain, s, detail)
+	if not segs[1].pos or not detail.unloadPos or not detail.basePrice then return end
 	local direct = M.dist(segs[1].pos, detail.unloadPos)
 	if direct < 50 then return end
 	local c = calib(s)
@@ -131,6 +162,7 @@ function M.compute(api, s, now)
 	local k = c.k.v
 	local cache = {}
 	local lines = {}
+	local prefixes, prefixCount = {}, 0
 	local items, skipped, defaulted = 0, 0, 0
 
 	local function add(line, field, value)
@@ -188,18 +220,41 @@ function M.compute(api, s, now)
 			if not known then defaulted = defaulted + 1 end
 			local price = f * M.dist(pts[1], target) * k
 
+			-- partial chain this item is on (lines done so far), for the end-to-end view
+			local seq = {}
+			for j = 1, n do seq[j] = pps[j].line end
+			local pkey = M.chainKey(cargo.cargoType, seq) .. (inVehicle and "~" or "")
+			local P = prefixes[pkey]
+			if P == nil and prefixCount < M.MAX_PREFIXES then
+				P = { cargoType = cargo.cargoType, lines = seq, inVehicle = inVehicle or false, units = 0,
+					done = {}, inProgress = 0, price = 0 }
+				for j = 1, n do P.done[j] = 0 end
+				prefixes[pkey] = P
+				prefixCount = prefixCount + 1
+			end
+
 			for j = 1, n do
 				local share = price * lengths[j] / total
 				local field = (inVehicle and j == n) and "inProgress" or "done"
 				local L = add(pps[j].line, field, share)
 				if j == n then L.units = L.units + 1 end
+				if P then
+					if field == "done" then P.done[j] = P.done[j] + share else P.inProgress = P.inProgress + share end
+				end
+			end
+			if P then
+				P.units = P.units + 1
+				P.price = P.price + price
 			end
 			items = items + 1
 		end)
 		if not ok then skipped = skipped + 1 end
 	end
 
-	return { t = now, lines = lines, items = items, skipped = skipped, defaultFactor = defaulted, k = k }
+	local prefixList = {}
+	for _, P in pairs(prefixes) do prefixList[#prefixList + 1] = P end
+	return { t = now, lines = lines, items = items, skipped = skipped, defaultFactor = defaulted, k = k,
+		prefixes = prefixList, chains = s.chains }
 end
 
 return M

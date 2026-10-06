@@ -15,6 +15,7 @@ MOD = ROOT / "mod" / "olrick_line_doctor_1" / "content" / "line_doctor"
 sys.path.insert(0, str(ROOT / "analyzer"))
 
 import analyze  # noqa: E402
+import chains  # noqa: E402
 
 try:
     from lupa import LuaRuntime
@@ -229,6 +230,23 @@ class LuaModTest(unittest.TestCase):
         self.assertEqual(res["lines"]["200"]["units"], 1)
         self.assertEqual(res["lines"]["100"]["units"], 0)
 
+    def test_pending_groups_items_by_partial_chain(self):
+        res = json.loads(self.lua.eval("""(function()
+            local pending = ug_require("olrick_line_doctor_1::/line_doctor/pending.lua")
+            local json = ug_require("olrick_line_doctor_1::/line_doctor/json.lua")
+            local s = {}
+            pending.learnDelivery(s, { cargoType = 5, basePrice = 9000, t = 10,
+                segments = { { line = 100, pos = { 0, 0, 0 } }, { line = 200 }, { line = 300 } }, unloadPos = { 9, 9, 0 } })
+            return json.encode(pending.compute(api, s, 20))
+        end)()"""))
+        self.assertEqual(res["chains"]["5|100>200>300"]["n"], 1)          # delivered chain remembered
+        (prefix,) = res["prefixes"]                                        # sim 9002: lines 100 then 200, in vehicle
+        self.assertEqual(prefix["lines"], [100, 200])
+        self.assertTrue(prefix["inVehicle"])
+        self.assertEqual(prefix["units"], 1)
+        self.assertAlmostEqual(prefix["done"][0], res["lines"]["100"]["done"], places=2)
+        self.assertAlmostEqual(prefix["inProgress"], res["lines"]["200"]["inProgress"], places=2)
+
     def test_pending_learns_factor_from_deliveries(self):
         f = self.lua.eval("""(function()
             local pending = ug_require("olrick_line_doctor_1::/line_doctor/pending.lua")
@@ -397,6 +415,40 @@ class AnalyzerFixtureTest(unittest.TestCase):
         stops = analyze.analyze(snap)["commonDeficitStops"]
         self.assertEqual(len(stops), 1)
         self.assertEqual(sorted(stops[0]["deficitLines"]), ["Poissons", "Poissons bis"])
+
+    @staticmethod
+    def _wood_snapshot():
+        def line(i, name, stops, net):
+            return {"id": i, "name": name, "stops": [{"stationName": x} for x in stops], "vehicles": [{}],
+                    "finance": {"last12Months": {"net": net}}}
+        return {
+            "date": {"day": 1, "month": 1, "year": 1980}, "yearTicks": 1461000, "cargoNames": {"12": "Bois"},
+            "lines": [line(1, "Camion bois", ["Camp", "Gare corresp."], 900000),
+                      line(2, "Train bois", ["Gare", "Loos"], 9600000),
+                      line(5, "Bois neuf", ["Forêt", "Scierie"], -50000)],
+            "pendingIncome": {
+                "k": 0.804, "items": 33,
+                "chains": {"12|1>2": {"cargoType": 12, "lines": [1, 2], "n": 4, "price": 400000, "first": 0, "last": 1461000}},
+                "prefixes": [
+                    {"cargoType": 12, "lines": [1], "inVehicle": False, "units": 22, "done": [1000], "inProgress": 0},
+                    {"cargoType": 12, "lines": [1, 2], "inVehicle": True, "units": 10, "done": [500], "inProgress": 3000},
+                    {"cargoType": 12, "lines": [5], "inVehicle": True, "units": 1, "done": [0], "inProgress": 40},
+                ]}}
+
+    def test_chains_rebuild_end_to_end(self):
+        built, meta = chains.build(self._wood_snapshot())
+        wood = next(c for c in built if c.lines == [1, 2])
+        self.assertEqual([s.name for s in wood.steps], ["Camion bois", "Train bois"])
+        self.assertEqual(wood.steps[0].done, 1500)          # both partial chains completed the truck step
+        self.assertEqual(wood.steps[0].waiting_after, 22)   # waiting at the station for the train
+        self.assertEqual(wood.steps[1].in_progress, 3000)
+        self.assertEqual(wood.steps[1].on_board, 10)
+        self.assertEqual((wood.pending, wood.in_progress, wood.net12m), (1500, 3000, 10500000))
+        new = next(c for c in built if c.lines == [5])
+        self.assertFalse(new.delivered)
+        page = chains.render(built, meta)
+        self.assertIn("Camion bois", page)
+        self.assertIn("jamais livrée", page)
 
     def test_sample_fixture(self):
         snap = analyze.load_snapshot(str(ROOT / "tests" / "fixtures" / "sample_export.json"))

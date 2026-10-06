@@ -57,6 +57,7 @@ python analyzer/analyze.py --deficit-only
 | `…/content/line_doctor/collector.lua` | collecte des données (toutes les API protégées par `pcall`) |
 | `…/content/line_doctor/line_doctor.script.lua` | game script : déclenchement et écriture de l'export |
 | `analyzer/analyze.py` | métriques, diagnostics, rapport Markdown/JSON |
+| `analyzer/chains.py` | chaînes de marchandises de bout en bout (profit en attente par étape), page HTML |
 | `.claude/skills/analyze-lines/` | instructions pour Claude |
 | `tests/` | tests hors jeu (Lua réel + API simulée) |
 | `docs/TESTING.md` | **procédure de test complète** |

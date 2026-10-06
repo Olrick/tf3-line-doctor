@@ -17,6 +17,15 @@ python analyzer/analyze.py --json out/diagnostics.json
 - Si aucun export n'est trouvé : rappeler que le jeu doit tourner (non en pause) avec le mod actif au moins quelques secondes, et vérifier `stdout.txt` (`grep LineDoctor`).
 - Noter la date de l'export (en tête du rapport) et la signaler si elle semble ancienne.
 
+Pour une chaîne de marchandises de bout en bout (étapes, profit en attente par étape, totaux) :
+
+```bash
+python analyzer/chains.py --html out/chaines.html            # toutes les chaînes
+python analyzer/chains.py --html out/chaines.html --cargo Bois
+```
+
+puis ouvrir `out/chaines.html` dans le navigateur intégré.
+
 Pour une ligne précise, lire aussi ses données brutes dans l'export (`lines[]` où `name` correspond) :
 temps de section réels vs théoriques, attente par arrêt, capacités et âge de chaque véhicule, modes de chargement.
 
