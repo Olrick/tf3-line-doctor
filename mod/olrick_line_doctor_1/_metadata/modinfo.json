@@ -1,0 +1,14 @@
+{
+    "authors": [
+        {
+            "name": "Olrick",
+            "role": "CREATOR"
+        }
+    ],
+    "description": "Exports a read-only snapshot of all lines (finances, capacity, waiting, timings, vehicles) so that an external analyzer can explain why lines lose money.",
+    "name": "Line Doctor",
+    "tags": [
+        "Script"
+    ],
+    "url": "https://github.com/Olrick/tf3-line-doctor"
+}

@@ -1,8 +1,11 @@
 -- Line Doctor game script (read-only: never sends commands, never books money).
 --
--- Exports a JSON snapshot of every player line:
---   * once shortly after a game is loaded,
---   * then every in-game month.
+-- Exports a JSON snapshot of every player line when either
+--   * an in-game month has passed since the last export, or
+--   * REFRESH_REAL_SEC real seconds have passed (this also triggers right after loading a save,
+--     whose saved clock is old).
+-- The decision only uses the saved state: the game runs update() on several simulation threads,
+-- each with its own Lua state, so file-level variables are NOT shared between calls.
 --
 -- Output, first one that works:
 --   1. <user data folder>/line_doctor/export.json  (+ history.jsonl, one compact snapshot per line)
@@ -10,15 +13,20 @@
 --   3. the game log (stdout.txt), between LINE_DOCTOR_BEGIN / LINE_DOCTOR_END markers
 -- The analyzer (analyzer/analyze.py) accepts any of the three.
 --
--- State saved with the game: { lastExport = <game time> }
+-- State saved with the game: { lastExport = <game time>, lastExportClock = <os.time() or nil> }
 
 local collector = ug_require "olrick_line_doctor_1::/line_doctor/collector.lua"
 local json = ug_require "olrick_line_doctor_1::/line_doctor/json.lua"
 
 local LOG_PREFIX = "[LineDoctor] "
 local LOG_CHUNK = 3000
+local REFRESH_REAL_SEC = 300
 
-local exportedThisSession = false
+local function clock()
+	local ok, t = pcall(function() return os and os.time and os.time() end)
+	if ok then return t end
+	return nil
+end
 
 local function log(msg)
 	if debugPrint then
@@ -90,7 +98,8 @@ local function export(reason)
 			#snapshot.lines, #pretty, #snapshot.errors, path))
 	else
 		writeToLog(compact)
-		log(string.format("file output unavailable, exported %d lines to the game log", #snapshot.lines))
+		log(string.format("file output unavailable (io=%s, app=%s), exported %d lines to the game log",
+			tostring(io ~= nil), tostring(app ~= nil), #snapshot.lines))
 	end
 	return true
 end
@@ -109,18 +118,26 @@ function data()
 			local s = state:get() or {}
 			local monthTicks = api.util.getDefaultMonthDuration()
 
+			local realNow = clock()
+
 			local reason
-			if not exportedThisSession then
-				reason = "load"
-			elseif s.lastExport == nil or now - s.lastExport >= monthTicks or now < s.lastExport then
+			if s.lastExport == nil then
+				reason = "first"
+			elseif now < s.lastExport then
+				reason = "load" -- an older save was loaded
+			elseif now - s.lastExport >= monthTicks then
 				reason = "monthly"
+			elseif realNow and (s.lastExportClock == nil or realNow - s.lastExportClock >= REFRESH_REAL_SEC
+					or realNow < s.lastExportClock) then
+				reason = "refresh"
 			end
 			if reason == nil then return end
 
-			exportedThisSession = true
-			export(reason)
+			-- record first, so that a failing export is not retried on every tick
 			s.lastExport = now
+			s.lastExportClock = realNow
 			state:set(s)
+			export(reason)
 		end,
 
 		handleEvent = function(_userParams, _state, _src, _id, _name)

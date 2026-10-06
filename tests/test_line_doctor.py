@@ -97,11 +97,33 @@ class LuaModTest(unittest.TestCase):
             self.lua.execute("script.update({}, stateObj, 1)")  # first tick after load
             export = Path(tmp) / "export.json"
             self.assertTrue(export.exists())
-            self.assertEqual(json.loads(export.read_text(encoding="utf-8"))["exportReason"], "load")
+            self.assertEqual(json.loads(export.read_text(encoding="utf-8"))["exportReason"], "first")
             self.lua.execute("script.update({}, stateObj, 1)")  # same month: no new export
             self.assertEqual(len((Path(tmp) / "history.jsonl").read_text().splitlines()), 1)
             logs = list(self.lua.eval("logLines").values())
             self.assertTrue(any("exported 2 lines" in l for l in logs), logs)
+
+            # The game runs update() on several threads, each with its own Lua state:
+            # a fresh state sharing the saved game-script state must not export again.
+            saved = self.lua.eval("saved")
+            other = make_runtime()
+            other.execute(f"""
+                app = {{ getUserDataFolder = function() return "{lua_path(Path(tmp))}" end }}
+                dofile("{lua_path(MOD / 'line_doctor.script.lua')}")
+                script = data()
+            """)
+            other.globals().saved = other.table_from(dict(saved))
+            other.execute("""
+                stateObj = { get = function() return saved end, set = function(_, v) saved = v end }
+                script.update({}, stateObj, 1)
+            """)
+            self.assertEqual(len((Path(tmp) / "history.jsonl").read_text().splitlines()), 1)
+
+            # loading the save later (saved real clock is old) triggers a refresh export
+            other.execute("saved.lastExportClock = saved.lastExportClock - 3600; script.update({}, stateObj, 1)")
+            lines = (Path(tmp) / "history.jsonl").read_text().splitlines()
+            self.assertEqual(len(lines), 2)
+            self.assertEqual(json.loads(lines[1])["exportReason"], "refresh")
 
     def test_log_fallback_is_parsed_by_analyzer(self):
         self.lua.execute(f"""
