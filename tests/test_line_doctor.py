@@ -63,7 +63,8 @@ class LuaModTest(unittest.TestCase):
         # the GUI script cannot run outside the game, but a syntax error would break the whole mod
         mod_root = MOD.parent
         files = sorted(mod_root.rglob("*.lua"))
-        self.assertGreaterEqual(len(files), 10)
+        listed = json.loads((mod_root.parent / "_content.json").read_text())["files"]
+        self.assertEqual(len(files), len(listed))  # every listed file is checked
         for f in files:
             ok, err = self.lua.eval("function(src, name) local fn, e = load(src, name) return fn ~= nil, e end")(
                 f.read_text(encoding="utf-8"), f.name)
