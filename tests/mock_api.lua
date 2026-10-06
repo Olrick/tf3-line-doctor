@@ -69,7 +69,14 @@ local function component(e, t)
 	return nil
 end
 
-local function lineOf(ents) return lines[ents[1]] end
+-- accounts exist for lines and for vehicles (a vehicle gets an equal share of its line)
+local function lineOf(ents)
+	local e = ents[1]
+	if lines[e] then return lines[e] end
+	local l = lines[vehicles[e].line]
+	local n = #l.vehicles
+	return { income = l.income / n, running = l.running / n, maint = l.maint / n }
+end
 
 return {
 	type = {

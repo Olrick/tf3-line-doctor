@@ -83,6 +83,7 @@ class LuaModTest(unittest.TestCase):
         self.assertEqual(len(snap["errors"]), 2, snap["errors"])
         self.assertEqual(snap["lines"][1]["vehicles"][0]["capacities"], {"5": 20})
         self.assertEqual(snap["lines"][1]["vehicles"][0]["pendingIncome"], 1234)
+        self.assertEqual(bus["vehicles"][0]["finance12m"], {"net": -7500, "income": 7500, "costs": -15000})
         self.assertEqual(snap["cargoNames"], {"0": "Passengers", "5": "Coal"})
         # the failing api call is captured, not fatal
         self.assertTrue(any("getBlockedTrains" in e for e in snap["errors"]))

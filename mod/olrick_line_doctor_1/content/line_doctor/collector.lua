@@ -162,6 +162,17 @@ local function collectVehicle(api, vehicle, now, yearTicks, stateEnum)
 		return total
 	end)
 	-- revenue of the whole trip is only credited at final delivery; this is what the vehicle carries until then
+	-- same journal as the "Balance" chart of the game's vehicle window
+	v.finance12m = try("vehicle balance", function()
+		local fin = api.engine.util.finance
+		local maint = api.type.JournalEntry and api.type.JournalEntry.Maintenance or {}
+		local from = math.max(now - yearTicks, 0)
+		local net = fin.calculateBalance({ vehicle }, from, now, true)
+		local running = maint.VEHICLE and fin.calculateBalance({ vehicle }, from, now, true, maint.VEHICLE) or 0
+		local upkeep = maint.VEHICLE_MAINTENANCE and fin.calculateBalance({ vehicle }, from, now, true, maint.VEHICLE_MAINTENANCE) or 0
+		return { net = net, income = net - running - upkeep, costs = running + upkeep }
+	end)
+	-- income of the unloading in progress (only set while the vehicle unloads at a terminal);
 	-- the api documents it as a "list of pending income": accept a list or a single record
 	try("unloadPendingIncome", function()
 		local p = tv.unloadPendingIncome
