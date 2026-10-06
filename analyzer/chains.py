@@ -250,6 +250,7 @@ def main(argv=None) -> int:
     ap.add_argument("--html", default="out/chaines.html", help="output HTML file")
     ap.add_argument("--cargo", help="only chains whose cargo name contains this text")
     ap.add_argument("--deficit", action="store_true", help="only chains whose result is negative, worst first")
+    ap.add_argument("--line", help="only chains with a line whose name contains this text")
     args = ap.parse_args(argv)
     source = args.source or (analyze.default_candidates() or [None])[0]
     if not source:
@@ -262,6 +263,8 @@ def main(argv=None) -> int:
     chains, meta = build(snaps[-1])
     if args.cargo:
         chains = [c for c in chains if args.cargo.lower() in c.cargo.lower()]
+    if args.line:
+        chains = [c for c in chains if any(args.line.lower() in s.name.lower() for s in c.steps)]
     title = "Chaînes de transport"
     if args.deficit:
         chains = sorted((c for c in chains if c.allocated < 0), key=lambda c: c.allocated)
