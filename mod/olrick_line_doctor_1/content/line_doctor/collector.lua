@@ -161,6 +161,11 @@ local function collectVehicle(api, vehicle, now, yearTicks, stateEnum)
 		for _, c in ipairs(list(counts)) do total = total + (num(c) or 0) end
 		return total
 	end)
+	-- revenue of the whole trip is only credited at final delivery; this is what the vehicle carries until then
+	v.pendingIncome = try("unloadPendingIncome", function()
+		local p = tv.unloadPendingIncome
+		return p and num(p.amount)
+	end)
 	v.runningCostPerYear = try("getRunningCost", api.engine.util.vehicle.getRunningCost, vehicle)
 	v.speed = try("getSpeed", api.engine.util.vehicle.getSpeed, vehicle)
 

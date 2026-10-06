@@ -36,7 +36,7 @@ local lines = {
 local vehicles = {
 	[11] = { line = 100, cap = { 40 }, loaded = 5, age = 30 }, [12] = { line = 100, cap = { 40 }, loaded = 5, age = 30 },
 	[13] = { line = 100, cap = { 40 }, loaded = 5, age = 30 }, [14] = { line = 100, cap = { 40 }, loaded = 5, age = 30, stopped = true },
-	[21] = { line = 200, cap = { 0, 0, 0, 0, 0, 20 }, loaded = 19, age = 2 },
+	[21] = { line = 200, cap = { 0, 0, 0, 0, 0, 20 }, loaded = 19, age = 2, pending = 1234 },
 	[22] = { line = 200, cap = { 0, 0, 0, 0, 0, 20 }, loaded = 19, age = 2 },
 }
 
@@ -62,6 +62,7 @@ local function component(e, t)
 			daysAtTerminal = 0, daysInDepot = 0, stopIndex = 0, autoDeparture = true,
 			sectionTimes = { 100, 100 }, lastLineStopDeparture = NOW - 1000,
 			config = { capacities = v.cap },
+			unloadPendingIncome = { amount = v.pending or 0 },
 			transportVehicleConfig = { vehicles = { { part = { modelId = 7 }, purchaseTime = NOW - v.age * YEAR, maintenanceState = 0.9 } } },
 		}
 	end

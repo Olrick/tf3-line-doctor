@@ -244,6 +244,9 @@ def line_metrics(line: dict, passenger_id: str | None, year_ticks: float = 14610
         "avgSectionDriveSec": (drive_expected_total / len(drive_expected)) if drive_expected else None,
         "avgVehicleAgeYears": (sum(ages) / len(ages)) if ages else None,
         "minMaintenanceState": min(maint) if maint else None,
+        "pendingIncome": sum(_num(v.get("pendingIncome")) for v in vehicles) if any(
+            v.get("pendingIncome") is not None for v in vehicles) else None,
+        "cargoTypes": sorted(cargo),
         "stoppedVehicles": sum(1 for v in vehicles if v.get("userStopped")),
         "sectionsMeasured": measured,
         "stuckAtTerminal": sum(1 for v in vehicles if _num(v.get("daysAtTerminal")) >= 5),
@@ -269,7 +272,8 @@ def line_metrics(line: dict, passenger_id: str | None, year_ticks: float = 14610
 STRUCTURAL = {"OVERCAPACITY", "COST_STRUCTURE", "EMPTY_RETURN", "LOW_FREQUENCY"}
 
 
-def diagnose(m: dict, shared: dict[int, list[str]]) -> list[Finding]:
+def diagnose(m: dict, shared: dict[int, list[str]], transfers: dict | None = None) -> list[Finding]:
+    transfers = transfers or {}
     f: list[Finding] = []
 
     def add(finding: Finding):
@@ -347,8 +351,9 @@ def diagnose(m: dict, shared: dict[int, list[str]]) -> list[Finding]:
         add(Finding("OLD_FLEET", "minor", f"Âge moyen de la flotte : {m['avgVehicleAgeYears']:.0f} ans.",
                     "Les véhicules anciens coûtent plus cher en entretien et sont plus lents : envisager le remplacement."))
     if m["minMaintenanceState"] is not None and m["minMaintenanceState"] < LOW_MAINTENANCE_STATE:
-        add(Finding("POOR_MAINTENANCE", "minor", f"État d'entretien minimal : {m['minMaintenanceState']:.2f}.",
-                    "Rattacher la ligne à un atelier de maintenance ou vérifier sa capacité."))
+        add(Finding("POOR_MAINTENANCE", "info",
+                    f"État d'entretien lu : {m['minMaintenanceState']:.0%} (lecture à confirmer dans la fenêtre du véhicule).",
+                    "Si l'état affiché en jeu est aussi bas : rattacher la ligne à un atelier de maintenance."))
 
     if m["kind"] != "cargo" and m["intervalSec"] and m["intervalSec"] > LONG_INTERVAL_SEC:
         add(Finding("LOW_FREQUENCY", "minor", f"Un passage toutes les {m['intervalSec'] / 60:.0f} min.",
@@ -392,11 +397,24 @@ def diagnose(m: dict, shared: dict[int, list[str]]) -> list[Finding]:
                     "Personne ne monte : vérifier que les arrêts couvrent des zones habitées/de destination, "
                     "qu'il existe une demande entre ces arrêts et que le trajet n'est pas plus lent qu'à pied."))
 
+    tr = transfers.get(m["id"])
+    if tr and _num(m["net12m"]) < 0:
+        slow = [t for t in tr["lines"] if t["cycleMonths"] and t["cycleMonths"] > SLOW_CYCLE_MONTHS]
+        msg = (f"En correspondance avec : {', '.join(t['name'] for t in tr['lines'])}. "
+               f"Résultat cumulé du groupe : {_money(tr['groupNet'])}.")
+        if slow:
+            msg += " Correspondance lente : " + ", ".join(f"{t['name']} (~{t['cycleMonths']:.0f} mois)" for t in slow) + "."
+        add(Finding("TRANSFER_DEPENDENT", "major" if tr["groupNet"] > 0 else "minor", msg,
+                    "Dans TF3, chaque segment n'est payé qu'à la livraison au destinataire final : les recettes de "
+                    "cette ligne dépendent des lignes suivantes et arrivent avec leur retard. Juger le groupe, pas la "
+                    "ligne seule, avant de la réduire ou de la supprimer.",
+                    {"groupNet": tr["groupNet"], "lines": [t["name"] for t in tr["lines"]]}))
+
     overlaps = shared.get(m["id"]) or []
     if overlaps:
         add(Finding("SHARED_STATIONS", "info",
-                    f"Partage la majorité de ses arrêts avec : {', '.join(overlaps)}.",
-                    "Possible cannibalisation : comparer les deux lignes, fusionner ou différencier les dessertes."))
+                    f"Dessert en grande partie les mêmes arrêts que : {', '.join(overlaps)}.",
+                    "Lignes parallèles : possible cannibalisation (à distinguer d'une simple correspondance)."))
     return f
 
 
@@ -412,6 +430,37 @@ def shared_station_map(metrics: list[dict]) -> dict[int, list[str]]:
             sb = {s for s in b["stationGroups"] if s is not None}
             if len(sa & sb) >= max(2, math.ceil(0.5 * len(sa))):
                 out.setdefault(a["id"], []).append(str(b["name"]))
+    return out
+
+
+def transfer_map(metrics: list[dict]) -> dict:
+    """Lines sharing a station and a cargo type can exchange passengers/cargo (correspondences).
+
+    Groups are connected components; groupNet is the summed 12-month result of the component.
+    """
+    by_id = {m["id"]: m for m in metrics}
+    links: dict = {m["id"]: set() for m in metrics}
+    for a in metrics:
+        for b in metrics:
+            if a is b:
+                continue
+            if set(a["stationGroups"]) & set(b["stationGroups"]) and set(a["cargoTypes"]) & set(b["cargoTypes"]):
+                links[a["id"]].add(b["id"])
+    out = {}
+    for m in metrics:
+        if not links[m["id"]]:
+            continue
+        seen, todo = {m["id"]}, [m["id"]]
+        while todo:
+            for n in links[todo.pop()]:
+                if n not in seen:
+                    seen.add(n)
+                    todo.append(n)
+        out[m["id"]] = {
+            "lines": [{"name": by_id[n]["name"], "cycleMonths": by_id[n]["cycleMonths"]}
+                      for n in sorted(links[m["id"]], key=str)],
+            "groupNet": sum(_num(by_id[n]["net12m"]) for n in seen),
+        }
     return out
 
 
@@ -437,9 +486,10 @@ def analyze(snapshot: dict) -> dict:
     year_ticks = _num(snapshot.get("yearTicks"), 1461000) or 1461000
     metrics = [line_metrics(l, passenger_id, year_ticks) for l in snapshot.get("lines") or []]
     shared = shared_station_map(metrics)
+    transfers = transfer_map(metrics)
     lines = []
     for m in metrics:
-        findings = sorted(diagnose(m, shared), key=lambda x: SEVERITY_ORDER[x.severity])
+        findings = sorted(diagnose(m, shared, transfers), key=lambda x: SEVERITY_ORDER[x.severity])
         lines.append({"metrics": m, "findings": [f.__dict__ for f in findings]})
     lines.sort(key=lambda l: (l["metrics"]["net12m"] is None, l["metrics"]["net12m"] or 0))
     total_net = sum(_num(l["metrics"]["net12m"]) for l in lines)
@@ -484,7 +534,7 @@ def to_markdown(result: dict, only_deficit: bool = False) -> str:
         out.append(f"- ⚠️ {len(result['exportErrors'])} erreur(s) API pendant l'export (voir exportErrors)")
     for c in result.get("commonDeficitStops") or []:
         out.append(f"- 🔎 Arrêt commun aux lignes déficitaires (et à aucune ligne rentable) : **{c['station']}** "
-                   f"({', '.join(c['deficitLines'])})")
+                   f"({', '.join(c['deficitLines'])}) — indice à vérifier, pas une preuve")
     out.append("")
     out.append("| Ligne | Type | Véh. | Résultat 12m | Recettes | Coûts | Couverture | Utilisation | Remplissage | Intervalle | Aller-retour |")
     out.append("|---|---|---|---|---|---|---|---|---|---|---|")
@@ -506,6 +556,8 @@ def to_markdown(result: dict, only_deficit: bool = False) -> str:
             continue
         out.append(f"## {m['name']} — {_money(m['net12m'])}")
         out.append(f"Arrêts : {' → '.join(str(n) for n in m['stationNames'])}")
+        if m.get("pendingIncome"):
+            out.append(f"Recettes en attente de livraison finale (à bord) : {_money(m['pendingIncome'])}")
         if any(m["waitingPerStop"]):
             out.append(f"En attente par arrêt : {[int(w) for w in m['waitingPerStop']]}")
         for fd in l["findings"]:

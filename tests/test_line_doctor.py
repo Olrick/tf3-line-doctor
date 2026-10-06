@@ -82,6 +82,7 @@ class LuaModTest(unittest.TestCase):
         # only the two expected failures (no out-of-range cargo ids)
         self.assertEqual(len(snap["errors"]), 2, snap["errors"])
         self.assertEqual(snap["lines"][1]["vehicles"][0]["capacities"], {"5": 20})
+        self.assertEqual(snap["lines"][1]["vehicles"][0]["pendingIncome"], 1234)
         self.assertEqual(snap["cargoNames"], {"0": "Passengers", "5": "Coal"})
         # the failing api call is captured, not fatal
         self.assertTrue(any("getBlockedTrains" in e for e in snap["errors"]))
@@ -206,6 +207,27 @@ class AnalyzerFixtureTest(unittest.TestCase):
         result = analyze.analyze({"schemaVersion": 2, "yearTicks": 1461000, "lines": [self._cart_line(12, 2.0)]})
         codes = {f["code"] for f in result["lines"][0]["findings"]}
         self.assertIn("NO_COMPLETED_TRIP", codes)
+
+    def test_feeder_line_is_judged_with_its_connections(self):
+        def line(i, name, stations, net, monthly_val):
+            return {"id": i, "name": name, "stops": [{"stationGroup": g, "stationName": str(g)} for g in stations],
+                    "cargo": {"0": {"capacity": 18, "used": 9, "realSectionTimes": [[120, 3], [120, 3]],
+                                    "driveSectionTimesSec": [110, 110]}},
+                    "vehicles": [{"loaded": 3, "parts": [{"ageYears": 2}]}] * 3,
+                    "finance": {"last12Months": {"net": net, "income": 10000, "vehicleRunningCosts": -10000 + net},
+                                "previous12Months": {"net": net}, "monthlyNet": [monthly_val] * 12}}
+        snap = {"schemaVersion": 2, "passengerCargoTypeId": 0, "yearTicks": 1461000, "lines": [
+            line(1, "Navette", [10, 11, 12], -20000, -1500),
+            line(2, "Intercité", [10, 20], 55000, 4500),
+            line(3, "Isolée", [30, 31], -5000, -400),
+        ]}
+        result = analyze.analyze(snap)
+        by_name = {l["metrics"]["name"]: {f["code"]: f for f in l["findings"]} for l in result["lines"]}
+        feeder = by_name["Navette"]["TRANSFER_DEPENDENT"]
+        self.assertEqual(feeder["severity"], "major")            # the group as a whole makes money
+        self.assertEqual(feeder["evidence"]["groupNet"], 35000)
+        self.assertNotIn("TRANSFER_DEPENDENT", by_name["Isolée"])
+        self.assertNotIn("TRANSFER_DEPENDENT", by_name["Intercité"])  # profitable: nothing to explain
 
     def test_sample_fixture(self):
         snap = analyze.load_snapshot(str(ROOT / "tests" / "fixtures" / "sample_export.json"))

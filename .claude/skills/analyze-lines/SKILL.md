@@ -26,6 +26,17 @@ temps de section réels vs théoriques, attente par arrêt, capacités et âge d
 Les temps de section (`sectionTimesSec`, `realSectionTimes`) sont en secondes de jeu : une section de 550 s
 dure ~4,5 mois de calendrier. Sur une ligne lente, les recettes arrivent par à-coups à chaque fin de trajet et
 le résultat d'un mois isolé ne veut rien dire : raisonner en allers-retours (colonne « Aller-retour »).
+**Règle de paiement TF3 :** la rémunération de **tous** les segments d'un trajet (passagers ou marchandises) n'est
+versée qu'à la livraison au destinataire final (usine, consommateur, destination du passager). Conséquences :
+- une ligne d'apport (correspondance) peut paraître déficitaire alors que le groupe de lignes est rentable : regarder
+  `TRANSFER_DEPENDENT` et le résultat cumulé du groupe avant de conseiller de réduire ou supprimer une ligne ;
+- ses recettes arrivent avec le retard du trajet le plus lent de la chaîne ;
+- une chaîne interrompue (marchandise jamais livrée au client final) ne rapporte rien à aucun segment ;
+- `pendingIncome` = recettes à bord pas encore versées.
+
+**État d'entretien :** la valeur exportée (`maintenanceState`) n'a pas encore été confirmée face à l'état affiché
+en jeu ; ne pas en tirer de conclusion sans confirmation de l'utilisateur.
+
 `lastLineStopDeparture` peut rester à 0 même quand la ligne fonctionne : ne pas s'en servir pour conclure à un blocage.
 
 Les diagnostics de l'analyseur sont des **indices heuristiques**, pas des verdicts. Pour chaque ligne déficitaire :
