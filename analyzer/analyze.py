@@ -351,9 +351,11 @@ def diagnose(m: dict, shared: dict[int, list[str]], transfers: dict | None = Non
         add(Finding("OLD_FLEET", "minor", f"Âge moyen de la flotte : {m['avgVehicleAgeYears']:.0f} ans.",
                     "Les véhicules anciens coûtent plus cher en entretien et sont plus lents : envisager le remplacement."))
     if m["minMaintenanceState"] is not None and m["minMaintenanceState"] < LOW_MAINTENANCE_STATE:
-        add(Finding("POOR_MAINTENANCE", "info",
-                    f"État d'entretien lu : {m['minMaintenanceState']:.0%} (lecture à confirmer dans la fenêtre du véhicule).",
-                    "Si l'état affiché en jeu est aussi bas : rattacher la ligne à un atelier de maintenance."))
+        state = m["minMaintenanceState"]
+        add(Finding("POOR_MAINTENANCE", "major" if state < 0.25 else "minor",
+                    f"État des véhicules : {state:.0%} (identique à l'état affiché en jeu).",
+                    "Un véhicule mal entretenu coûte plus cher à faire rouler, roule moins vite et offre moins de confort : "
+                    "rattacher la ligne à une station de maintenance (vérifier sa capacité)."))
 
     if m["kind"] != "cargo" and m["intervalSec"] and m["intervalSec"] > LONG_INTERVAL_SEC:
         add(Finding("LOW_FREQUENCY", "minor", f"Un passage toutes les {m['intervalSec'] / 60:.0f} min.",

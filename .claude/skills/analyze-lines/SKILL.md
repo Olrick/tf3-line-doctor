@@ -34,8 +34,8 @@ versée qu'à la livraison au destinataire final (usine, consommateur, destinati
 - une chaîne interrompue (marchandise jamais livrée au client final) ne rapporte rien à aucun segment ;
 - `pendingIncome` = recettes à bord pas encore versées.
 
-**État d'entretien :** la valeur exportée (`maintenanceState`) n'a pas encore été confirmée face à l'état affiché
-en jeu ; ne pas en tirer de conclusion sans confirmation de l'utilisateur.
+**État d'entretien (vérifié en jeu) :** `maintenanceState` = état du véhicule affiché en jeu (0–100 %). Sans station
+de maintenance il descend jusqu'à 0 ; un mauvais état augmente les coûts de fonctionnement et réduit vitesse et confort.
 
 `lastLineStopDeparture` peut rester à 0 même quand la ligne fonctionne : ne pas s'en servir pour conclure à un blocage.
 
