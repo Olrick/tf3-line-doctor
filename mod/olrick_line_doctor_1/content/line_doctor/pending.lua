@@ -104,6 +104,80 @@ local function recordChain(s, detail)
 	c.n = c.n + 1
 	c.price = c.price + (detail.basePrice or 0)
 	c.last = detail.t
+
+	-- final customers and producers of this chain (a few each, with counts): they link chains into
+	-- production trees (a chain starting at an industry is fed by the chains delivering to it)
+	local function count(field, entity)
+		if entity == nil then return end
+		c[field] = c[field] or {}
+		local key = tostring(entity)
+		if c[field][key] ~= nil then
+			c[field][key] = c[field][key] + 1
+		else
+			local n = 0
+			for _ in pairs(c[field]) do n = n + 1 end
+			if n < 5 then c[field][key] = 1 end
+		end
+	end
+	count("targets", detail.target)
+	count("sources", detail.source)
+
+	-- share of the price earned by each step (straight segment lengths, as the game shares it)
+	local pts = {}
+	for i, seg in ipairs(detail.segments) do pts[i] = seg.pos end
+	pts[#pts + 1] = detail.unloadPos
+	local lengths, total, complete = {}, 0, true
+	for i = 1, #detail.segments do
+		if pts[i] == nil or pts[i + 1] == nil then complete = false break end
+		lengths[i] = M.dist(pts[i], pts[i + 1])
+		total = total + lengths[i]
+	end
+	if complete and total > 0 then
+		c.stepShare = c.stepShare or {}
+		for i = 1, #lengths do c.stepShare[i] = (c.stepShare[i] or 0) + lengths[i] / total end
+		c.nShare = (c.nShare or 0) + 1
+	end
+end
+
+--- Display names of the final customers of the recorded chains (industry, or the town of a building).
+function M.resolveTargetNames(api, s)
+	s.targetNames = s.targetNames or {}
+	local C = api.type.ComponentType
+	local scs = api.engine.system.streetConnectorSystem
+	local keys = {}
+	for _, c in pairs(s.chains or {}) do
+		for k in pairs(c.targets or {}) do keys[k] = true end
+		for k in pairs(c.sources or {}) do keys[k] = true end
+	end
+	do
+		for tkey in pairs(keys) do
+			if s.targetNames[tkey] == nil then
+				local target = tonumber(tkey)
+				local name
+				pcall(function()
+					local tb = api.engine.getComponent(target, C.TOWN_BUILDING)
+					if tb and tb.town then name = "Ville de " .. api.engine.util.getEntityName(tb.town) end
+				end)
+				for _, fn in ipairs({ "getConstructionEntityForIndustry", "getConstructionEntityForSubconstruction" }) do
+					if name then break end
+					pcall(function()
+						local con = scs[fn](target)
+						if con and con >= 0 then
+							local n = api.engine.util.getEntityName(con)
+							if n and n ~= "" then name = n end
+						end
+					end)
+				end
+				if not name then
+					pcall(function()
+						local n = api.engine.util.getEntityName(target)
+						if n and n ~= "" then name = n end
+					end)
+				end
+				s.targetNames[tkey] = name or false
+			end
+		end
+	end
 end
 
 --- Learns from one real delivery (see ticket_probe cargoDetail): price factor of the cargo type and the
@@ -337,10 +411,11 @@ function M.compute(api, s, now)
 
 	local prefixList = {}
 	for _, P in pairs(prefixes) do prefixList[#prefixList + 1] = P end
+	pcall(M.resolveTargetNames, api, s)
 	local known = { targets = s.targetPosCount or 0, stops = s.stopPosCount or 0 }
 	return { t = now, lines = lines, items = items, skipped = skipped, skippedWhy = why, positionsKnown = known,
 		defaultFactor = defaulted, k = k,
-		prefixes = prefixList, chains = s.chains }
+		prefixes = prefixList, chains = s.chains, targetNames = s.targetNames }
 end
 
 return M

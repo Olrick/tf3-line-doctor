@@ -455,7 +455,9 @@ class AnalyzerFixtureTest(unittest.TestCase):
                       line(5, "Bois neuf", ["Forêt", "Scierie"], -50000)],
             "pendingIncome": {
                 "k": 0.804, "items": 33,
-                "chains": {"12|1>2": {"cargoType": 12, "lines": [1, 2], "n": 4, "price": 400000, "first": 0, "last": 1461000}},
+                "chains": {"12|1>2": {"cargoType": 12, "lines": [1, 2], "n": 4, "price": 400000, "first": 0, "last": 1461000,
+                                      "targets": {"900": 4}, "stepShare": [0.4, 3.6], "nShare": 4}},
+                "targetNames": {"900": "Scierie de Loos"},
                 "prefixes": [
                     {"cargoType": 12, "lines": [1], "inVehicle": False, "units": 22, "done": [1000], "inProgress": 0},
                     {"cargoType": 12, "lines": [1, 2], "inVehicle": True, "units": 10, "done": [500], "inProgress": 3000},
@@ -475,9 +477,41 @@ class AnalyzerFixtureTest(unittest.TestCase):
         self.assertEqual(wood.potential, 10500000 + 1500 + 3000)
         new = next(c for c in built if c.lines == [5])
         self.assertFalse(new.delivered)
-        page = chains.render(built, meta)
+        self.assertEqual(wood.destination, "Scierie de Loos")
+        self.assertAlmostEqual(wood.steps[0].price_share, 0.1)
+        self.assertAlmostEqual(wood.unit_value, 100000 * 0.804)
+        page = chains.render(chains.build_trees(built), meta)
         self.assertIn("Camion bois", page)
-        self.assertIn("jamais livrée", page)
+        self.assertIn("Scierie de Loos", page)
+        self.assertIn("pas encore livrée", page)
+
+    def test_production_tree_from_final_product(self):
+        def line(i, name):
+            return {"id": i, "name": name, "stops": [{"stationName": name + " A"}, {"stationName": name + " B"}],
+                    "vehicles": [{}], "finance": {"last12Months": {"net": 1000 * i}}}
+        def chain(cargo, lines, src, dst):
+            return {"cargoType": cargo, "lines": lines, "n": 10, "price": 10000, "first": 0, "last": 1,
+                    "sources": {src: 10}, "targets": {dst: 10}}
+        snap = {"date": {}, "yearTicks": 1461000,
+                "cargoNames": {"27": "Vêtements", "26": "Tissu", "25": "Laine", "2": "Colorants"},
+                "lines": [line(1, "Vetements"), line(2, "Tissu camions"), line(3, "Ligne 7"),
+                          line(4, "Peinture"), line(5, "Train colorant"), line(6, "Camions colorant")],
+                "pendingIncome": {"k": 0.804, "prefixes": [],
+                    "targetNames": {"10": "Usine textile", "11": "Ville de Vandœuvre", "12": "Tisseranderie",
+                                    "13": "Ferme", "14": "Usine chimique"},
+                    "chains": {"27|1": chain(27, [1], "10", "11"), "26|2": chain(26, [2], "12", "10"),
+                               "25|3": chain(25, [3], "13", "12"), "2|4>5>6": chain(2, [4, 5, 6], "14", "10")}}}
+        built, meta = chains.build(snap)
+        trees = chains.build_trees(built)
+        self.assertEqual(len(trees), 1)                              # one product: clothes to the town
+        root = trees[0]
+        self.assertEqual(root.chain.cargo, "Vêtements")
+        self.assertEqual(sorted(i.chain.cargo for i in root.inputs), ["Colorants", "Tissu"])
+        tissu = next(i for i in root.inputs if i.chain.cargo == "Tissu")
+        self.assertEqual([i.chain.cargo for i in tissu.inputs], ["Laine"])
+        self.assertEqual(root.allocated, 1000 + 2000 + 3000 + 4000 + 5000 + 6000)
+        page = chains.render(trees, meta)
+        self.assertIn("arbre de 4 chaînes", page)
 
     def test_sample_fixture(self):
         snap = analyze.load_snapshot(str(ROOT / "tests" / "fixtures" / "sample_export.json"))
