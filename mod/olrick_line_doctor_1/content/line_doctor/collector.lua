@@ -334,6 +334,47 @@ local function collectLine(api, line, now, yearTicks, cargoIdsSeen, stateEnum)
 	return L
 end
 
+-- The game's finance table (same data as the vanilla "Finances" window): every journal key with one value
+-- per period column, plus totals. Labels are resolved from the JournalEntry enums.
+local function collectFinanceTable(api, player)
+	local fin = api.engine.util.finance
+	if fin.computeFinanceTable == nil or api.type.ChartConfig == nil then return nil end
+	local JE = api.type.JournalEntry
+	local function nameOf(enumTable, value)
+		if enumTable == nil then return tostring(value) end
+		return enumName(enumTable, value)
+	end
+	local config = api.type.ChartConfig.new()
+	config.count = 4
+	local fd = fin.computeFinanceTable(player, config)
+	local out = {
+		headers = list(fd.header), total = list(fd.total), balance = list(fd.balance),
+		interest = list(fd.interest), loanBorrowing = list(fd.loanBorrowing), loanRepayment = list(fd.loanRepayment),
+		entries = {},
+	}
+	local function addKeyed(source, key, values, carrier)
+		local u = fd:unfoldKey(key)
+		out.entries[#out.entries + 1] = {
+			source = source, carrier = carrier,
+			type = nameOf(JE.Type, u[1]), maint = u[2] ~= nil and nameOf(JE.Maintenance, u[2]) or nil,
+			construction = u[3] ~= nil and nameOf(JE.Construction, u[3]) or nil,
+			values = list(values),
+		}
+	end
+	-- only the carriers the engine reports: asking for a fixed list double counts (TRAM returns ROAD rows)
+	local carriers = {}
+	fd:foreach_carrier(function(carrier) carriers[#carriers + 1] = carrier end)
+	for _, carrier in ipairs(carriers) do
+		local carrierName = nameOf(JE.Carrier, carrier)
+		fd:foreach_transport(function(key, values) addKeyed("transport", key, values, carrierName) end, carrier)
+	end
+	fd:foreach_investment(function(key, values) addKeyed("investment", key, values) end)
+	fd:foreach_other(function(key, values)
+		out.entries[#out.entries + 1] = { source = "other", type = "OTHER", other = nameOf(JE.Other, key), values = list(values) }
+	end)
+	return out
+end
+
 --- Collects the full snapshot.
 -- @param api the game api table
 -- @return a plain lua table ready for json encoding
@@ -369,6 +410,8 @@ function M.collect(api)
 		end),
 		earningsThisYear = player and try("calculateEarnings", util.finance.calculateEarnings, player),
 	}
+
+	snapshot.financeTable = player and try("computeFinanceTable", collectFinanceTable, api, player)
 
 	local stateEnum = try("TransportVehicleState enum", function() return api.type.enum.TransportVehicleState end)
 	local lineSystem = api.engine.system.lineSystem

@@ -292,6 +292,14 @@ class LuaModTest(unittest.TestCase):
         self.assertIsNotNone(snap)
         self.assertEqual(len(snap["lines"]), 2)
 
+    def test_company_finance_table(self):
+        fs = analyze.finance_summary(self.collect())
+        self.assertEqual(fs["headers"], ["1981", "1982"])
+        self.assertEqual(fs["rows"]["Recettes de transport (road)"], [40000, 42000])
+        self.assertEqual(fs["rows"]["Entretien de l'infrastructure (road)"], [-25000, -27000])
+        self.assertEqual(fs["rows"]["Constructions : track"], [0, -2000])
+        self.assertIn("Entretien de l'infrastructure", analyze.finance_markdown(fs))
+
     def test_end_to_end_diagnostics(self):
         result = analyze.analyze(self.collect())
         by_name = {l["metrics"]["name"]: l for l in result["lines"]}

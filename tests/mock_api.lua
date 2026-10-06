@@ -27,7 +27,29 @@ local simCargo = {
 		},
 	},
 }
-local MAINT = { VEHICLE = 10, VEHICLE_MAINTENANCE = 11 }
+local MAINT = { VEHICLE = 10, VEHICLE_MAINTENANCE = 11, INFRASTRUCTURE = 12 }
+local JE_TYPE = { INCOME = 1, MAINTENANCE = 2, CONSTRUCTION = 3 }
+local JE_CONSTRUCTION = { TRACK = 20 }
+local JE_CARRIER = { ROAD = 30 }
+
+-- finance table: 2 periods; road income, road vehicle running costs, road infrastructure upkeep, track building
+local financeKeys = {
+	[1] = { JE_TYPE.INCOME, nil, nil }, [2] = { JE_TYPE.MAINTENANCE, MAINT.VEHICLE, nil },
+	[3] = { JE_TYPE.MAINTENANCE, MAINT.INFRASTRUCTURE, nil }, [4] = { JE_TYPE.CONSTRUCTION, nil, JE_CONSTRUCTION.TRACK },
+}
+local financeData = {
+	header = { "1981", "1982" }, total = { -5000, -8000 }, balance = { 100000, 92000 },
+	interest = { 0, 0 }, loanBorrowing = { 0, 0 }, loanRepayment = { 0, 0 },
+	unfoldKey = function(_, key) return financeKeys[key] end,
+	foreach_carrier = function(_, fn) fn(JE_CARRIER.ROAD) end,
+	foreach_transport = function(_, fn, carrier)
+		if carrier == JE_CARRIER.ROAD then
+			fn(1, { 40000, 42000 }); fn(2, { -20000, -21000 }); fn(3, { -25000, -27000 })
+		end
+	end,
+	foreach_investment = function(_, fn) fn(4, { 0, -2000 }) end,
+	foreach_other = function(_, _fn) end,
+}
 local STATE = { IN_DEPOT = 0, EN_ROUTE = 1, AT_TERMINAL = 2, GOING_TO_DEPOT = 3 }
 
 local lines = {
@@ -108,7 +130,8 @@ end
 return {
 	type = {
 		ComponentType = C,
-		JournalEntry = { Maintenance = MAINT },
+		JournalEntry = { Maintenance = MAINT, Type = JE_TYPE, Construction = JE_CONSTRUCTION, Carrier = JE_CARRIER, Other = {} },
+		ChartConfig = { new = function() return {} end },
 		enum = { TransportVehicleState = STATE },
 	},
 	util = {
@@ -151,6 +174,7 @@ return {
 				end,
 				getPlayersBalance = function() return 1500000 end,
 				calculateEarnings = function() return 42000 end,
+				computeFinanceTable = function() return financeData end,
 			},
 			line = {
 				getMaxFrequency = function(line) return line == 100 and 1 / 900 or 1 / 240 end,

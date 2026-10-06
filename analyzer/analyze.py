@@ -644,8 +644,58 @@ def analyze(snapshot: dict, history: list[dict] | None = None) -> dict:
             "totalNet12m": total_net,
         },
         "commonDeficitStops": common_deficit_stops(metrics),
+        "finance": finance_summary(snapshot),
         "lines": lines,
     }
+
+
+# --- company finances ----------------------------------------------------------------------------
+
+FINANCE_LABELS = {
+    "INCOME": "Recettes de transport",
+    "SUBSIDY": "Subventions",
+    ("MAINTENANCE", "VEHICLE"): "Fonctionnement des véhicules",
+    ("MAINTENANCE", "VEHICLE_MAINTENANCE"): "Entretien des véhicules",
+    ("MAINTENANCE", "INFRASTRUCTURE"): "Entretien de l'infrastructure",
+    ("MAINTENANCE", "OTHER"): "Autre entretien",
+    "ACQUISITION": "Achats de véhicules",
+    "CONSTRUCTION": "Constructions",
+    "INTEREST": "Intérêts",
+    "LOAN": "Emprunt (capital)",
+    "OTHER": "Autres",
+}
+
+
+def finance_summary(snapshot: dict) -> dict | None:
+    """The game's finance table grouped as {label: [value per period]}, plus headers and totals."""
+    ft = snapshot.get("financeTable")
+    if not ft:
+        return None
+    n = len(ft.get("headers") or [])
+    rows: dict[str, list[float]] = {}
+    for e in ft.get("entries") or []:
+        t = e.get("type")
+        label = FINANCE_LABELS.get((t, e.get("maint"))) or FINANCE_LABELS.get(t) or str(t)
+        if t == "CONSTRUCTION" and e.get("construction"):
+            label = f"Constructions : {e['construction'].lower()}"
+        if e.get("carrier") and t in ("INCOME", "MAINTENANCE"):
+            label = f"{label} ({e['carrier'].lower()})"
+        vals = rows.setdefault(label, [0.0] * n)
+        for i, v in enumerate((e.get("values") or [])[:n]):
+            vals[i] += _num(v)
+    return {"headers": ft.get("headers") or [], "rows": rows, "total": ft.get("total") or []}
+
+
+def finance_markdown(fs: dict) -> str:
+    h = fs["headers"]
+    out = ["## Finances de la compagnie (tableau du jeu)", "",
+           "| Poste | " + " | ".join(str(x) for x in h) + " |", "|---|" + "---|" * len(h)]
+    for label, vals in sorted(fs["rows"].items(), key=lambda kv: kv[1][-2] if len(kv[1]) > 1 else kv[1][-1]):
+        if not any(vals):
+            continue
+        out.append(f"| {label} | " + " | ".join(_money(v) for v in vals) + " |")
+    out.append("| **Total** | " + " | ".join(f"**{_money(_num(v))}**" for v in fs["total"]) + " |")
+    return "\n".join(out)
 
 
 # --- report -----------------------------------------------------------------------------------
@@ -674,6 +724,9 @@ def to_markdown(result: dict, only_deficit: bool = False) -> str:
         out.append(f"- 🔎 Arrêt commun aux lignes déficitaires (et à aucune ligne rentable) : **{c['station']}** "
                    f"({', '.join(c['deficitLines'])}) — indice à vérifier, pas une preuve")
     out.append("")
+    if result.get("finance"):
+        out.append(finance_markdown(result["finance"]))
+        out.append("")
     out.append("| Ligne | Type | Véh. | Résultat 12m | Recettes | Coûts | Couverture | Utilisation | Remplissage | Intervalle | Aller-retour |")
     out.append("|---|---|---|---|---|---|---|---|---|---|---|")
     for l in result["lines"]:
