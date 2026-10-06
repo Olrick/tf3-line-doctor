@@ -666,6 +666,25 @@ FINANCE_LABELS = {
 }
 
 
+# The engine's JournalEntry enums do not iterate in Lua, so the export holds their numeric values.
+# Mapping checked on a real save (2026-10-06): carrier incomes match the summed incomes of the lines per
+# vehicle family (road = trucks + buses, rail = trains, water = ships, air = plane + helicopters); types by
+# sign and investment rows; maintenance kinds by size. Codes not seen or not identified stay as numbers.
+ENUM_CODES = {
+    "type": {"0": "LOAN", "1": "INTEREST", "2": "CONSTRUCTION", "3": "ACQUISITION", "4": "MAINTENANCE",
+             "5": "INCOME", "6": "OTHER", "7": "SUBSIDY"},
+    "maint": {"0": "VEHICLE", "1": "INFRASTRUCTURE", "2": "OTHER", "3": "VEHICLE_MAINTENANCE"},
+    "carrier": {"0": "route", "1": "rail", "2": "tram", "3": "non identifié", "4": "air", "5": "eau"},
+    "construction": {"0": "routes", "1": "voies ferrées", "6": "gares, dépôts et bâtiments", "7": "autre"},
+}
+
+
+def _decode(field: str, value):
+    if value is None:
+        return None
+    return ENUM_CODES.get(field, {}).get(str(value), value)
+
+
 def finance_summary(snapshot: dict) -> dict | None:
     """The game's finance table grouped as {label: [value per period]}, plus headers and totals."""
     ft = snapshot.get("financeTable")
@@ -673,13 +692,20 @@ def finance_summary(snapshot: dict) -> dict | None:
         return None
     n = len(ft.get("headers") or [])
     rows: dict[str, list[float]] = {}
-    for e in ft.get("entries") or []:
+    for raw in ft.get("entries") or []:
+        e = {k: (_decode(k, v) if k in ENUM_CODES else v) for k, v in raw.items()}
+        if e.get("type") not in ("CONSTRUCTION",):
+            e["construction"] = None if e.get("type") != "MAINTENANCE" else e.get("construction")
+        if e.get("type") != "MAINTENANCE":
+            e["maint"] = None
         t = e.get("type")
         label = FINANCE_LABELS.get((t, e.get("maint"))) or FINANCE_LABELS.get(t) or str(t)
         if t == "CONSTRUCTION" and e.get("construction"):
-            label = f"Constructions : {e['construction'].lower()}"
-        if e.get("carrier") and t in ("INCOME", "MAINTENANCE"):
-            label = f"{label} ({e['carrier'].lower()})"
+            label = f"Constructions : {str(e['construction']).lower()}"
+        if t == "MAINTENANCE" and e.get("maint") == "INFRASTRUCTURE" and e.get("construction") is not None:
+            label = f"{label} – {str(e['construction']).lower()}"
+        if e.get("carrier") is not None and t in ("INCOME", "MAINTENANCE"):
+            label = f"{label} ({str(e['carrier']).lower()})"
         vals = rows.setdefault(label, [0.0] * n)
         for i, v in enumerate((e.get("values") or [])[:n]):
             vals[i] += _num(v)
