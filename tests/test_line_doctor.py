@@ -235,6 +235,58 @@ class AnalyzerFixtureTest(unittest.TestCase):
         self.assertEqual(analyze.condition_label(0.62), "bon")
         self.assertEqual(analyze.condition_label(1.0), "très bon")
 
+    @staticmethod
+    def _truck_line(i, name, stations, cargo="33", queued=0, fleet=6, legs=(1379.0, 414.0), net=-900000):
+        stuck = {"state": 1, "speed": 0, "loaded": 22, "engineStopIndex": 1, "daysAtTerminal": 0,
+                 "parts": [{"ageYears": 19}]}
+        rolling = {"state": 1, "speed": 12, "loaded": 0, "engineStopIndex": 0, "daysAtTerminal": 0,
+                   "parts": [{"ageYears": 19}]}
+        return {"id": i, "name": name, "stops": [{"stationGroup": g, "stationName": f"S{g}"} for g in stations],
+                "cargo": {cargo: {"capacity": 22 * fleet, "used": 22 * queued,
+                                  "realSectionTimes": [[legs[0] + 20, 5], [legs[1] + 20, 5]],
+                                  "driveSectionTimesSec": list(legs)}},
+                "vehicles": [stuck] * queued + [rolling] * (fleet - queued),
+                "finance": {"last12Months": {"net": net, "income": 800000, "vehicleRunningCosts": net - 800000},
+                            "previous12Months": {"net": net}, "monthlyNet": [net / 12] * 12}}
+
+    def test_queue_and_asymmetric_route(self):
+        snap = {"schemaVersion": 2, "yearTicks": 1461000, "lines": [
+            self._truck_line(1, "Briques", [1, 2], queued=5, fleet=6),
+            self._truck_line(2, "Fluide", [3, 4], queued=1, fleet=6, legs=(400.0, 390.0)),
+        ]}
+        result = analyze.analyze(snap)
+        by_name = {l["metrics"]["name"]: {f["code"]: f for f in l["findings"]} for l in result["lines"]}
+        self.assertEqual(by_name["Briques"]["QUEUE"]["severity"], "critical")
+        self.assertEqual(by_name["Briques"]["QUEUE"]["evidence"]["stopName"], "S2")
+        self.assertEqual(by_name["Briques"]["ASYMMETRIC_ROUTE"]["severity"], "major")
+        self.assertNotIn("QUEUE", by_name["Fluide"])
+        self.assertNotIn("ASYMMETRIC_ROUTE", by_name["Fluide"])
+
+    def test_recurring_queue_detected_from_history(self):
+        def snap(t, queued):
+            return {"schemaVersion": 2, "yearTicks": 1461000, "gameTime": t,
+                    "lines": [self._truck_line(1, "Briques", [1, 2], queued=queued, fleet=11)]}
+        history = [snap(t, q) for t, q in enumerate([9, 0, 8, 1, 0, 9, 2, 1])]
+        result = analyze.analyze(history[-1], analyze.same_game_history(history))
+        f = {x["code"]: x for x in result["lines"][0]["findings"]}["QUEUE"]
+        self.assertIn("récurrente", f["message"])
+        self.assertIn("3 des 8", f["message"])
+
+    def test_history_stops_at_another_game(self):
+        other = {"schemaVersion": 2, "gameTime": 5, "lines": [{"id": 99}]}
+        mine = [{"schemaVersion": 2, "gameTime": t, "lines": [{"id": 1}]} for t in (10, 20)]
+        self.assertEqual(len(analyze.same_game_history([other] + mine)), 2)
+
+    def test_common_deficit_stop_needs_same_cargo(self):
+        snap = {"schemaVersion": 2, "yearTicks": 1461000, "lines": [
+            self._truck_line(1, "Poissons", [1, 2], cargo="6"),
+            self._truck_line(2, "Bus", [2, 3], cargo="0"),
+            self._truck_line(3, "Poissons bis", [2, 4], cargo="6"),
+        ]}
+        stops = analyze.analyze(snap)["commonDeficitStops"]
+        self.assertEqual(len(stops), 1)
+        self.assertEqual(sorted(stops[0]["deficitLines"]), ["Poissons", "Poissons bis"])
+
     def test_sample_fixture(self):
         snap = analyze.load_snapshot(str(ROOT / "tests" / "fixtures" / "sample_export.json"))
         result = analyze.analyze(snap)

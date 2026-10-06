@@ -37,6 +37,9 @@ versée qu'à la livraison au destinataire final (usine, consommateur, destinati
 **État d'entretien (vérifié en jeu) :** `maintenanceState` = état du véhicule affiché en jeu (0–100 %). Sans station
 de maintenance il descend jusqu'à 0 ; un mauvais état augmente les coûts de fonctionnement et réduit vitesse et confort.
 
+**Files d'attente :** `QUEUE` s'appuie sur l'historique des exports du journal (récurrence sur ~2 ans de jeu). Un
+voyage aller 3× plus long que le retour (`ASYMMETRIC_ROUTE`) avec une file = attente au déchargement, pas un détour.
+
 `lastLineStopDeparture` peut rester à 0 même quand la ligne fonctionne : ne pas s'en servir pour conclure à un blocage.
 
 Les diagnostics de l'analyseur sont des **indices heuristiques**, pas des verdicts. Pour chaque ligne déficitaire :

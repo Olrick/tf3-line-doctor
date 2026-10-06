@@ -39,6 +39,12 @@ DECLINE_RATIO = 0.25         # net result dropped by more than 25 % of revenue
 YOUNG_LINE_MONTHS = 6        # below this, structural verdicts are premature
 YOUNG_LINE_CYCLES = 2        # ... or fewer round trips than this
 SLOW_CYCLE_MONTHS = 3        # round trip longer than this: monthly results are lumpy
+QUEUE_MIN_VEHICLES = 3       # loaded vehicles standing still on the way to the same stop...
+QUEUE_MIN_SHARE = 0.4        # ...and at least this share of the fleet
+QUEUE_SPEED = 0.5            # m/s, below = standing still
+QUEUE_HISTORY = 24           # recent exports (~2 game years) scanned for recurring queues
+QUEUE_RECURRING_SHARE = 0.25 # queue seen in at least this share of them = recurring
+ASYMMETRY_RATIO = 2.0        # one direction takes this many times longer to drive than the other
 TICKS_PER_SEC = 1000         # game time ticks are milliseconds (year = 1 461 000 ticks = 1 461 s)
 
 
@@ -86,9 +92,9 @@ def default_candidates() -> list[str]:
     return sorted(found, key=os.path.getmtime, reverse=True)
 
 
-def extract_from_log(text: str) -> dict | None:
-    """Returns the last snapshot dumped in a game log, or None."""
-    snapshot = None
+def extract_all_from_log(text: str) -> list[dict]:
+    """Returns every complete snapshot dumped in a game log, oldest first."""
+    snapshots = []
     chunks: list[str] | None = None
     for raw in text.splitlines():
         if LOG_BEGIN in raw:
@@ -97,11 +103,17 @@ def extract_from_log(text: str) -> dict | None:
             chunks.append(raw.split(LOG_LINE, 1)[1])
         elif LOG_END in raw and chunks is not None:
             try:
-                snapshot = json.loads("".join(chunks))
+                snapshots.append(json.loads("".join(chunks)))
             except json.JSONDecodeError:
                 pass
             chunks = None
-    return snapshot
+    return snapshots
+
+
+def extract_from_log(text: str) -> dict | None:
+    """Returns the last snapshot dumped in a game log, or None."""
+    snapshots = extract_all_from_log(text)
+    return snapshots[-1] if snapshots else None
 
 
 def upgrade_snapshot(snap: dict) -> dict:
@@ -118,6 +130,39 @@ def upgrade_snapshot(snap: dict) -> dict:
                     v["loaded"] = sum(_num(x) for x in v["loaded"])
         snap["schemaVersion"] = 2
     return snap
+
+
+def load_snapshots(path: str) -> list[dict]:
+    """All snapshots of a source (log, history.jsonl or single export), oldest first."""
+    text = Path(path).read_text(encoding="utf-8", errors="replace")
+    stripped = text.lstrip()
+    if stripped.startswith("{"):
+        try:
+            return [upgrade_snapshot(json.loads(text))]
+        except json.JSONDecodeError:  # history.jsonl: one snapshot per line
+            return [upgrade_snapshot(json.loads(l)) for l in text.splitlines() if l.strip()]
+    snaps = [upgrade_snapshot(x) for x in extract_all_from_log(text)]
+    if not snaps:
+        raise ValueError(f"No Line Doctor export found in {path}")
+    return snaps
+
+
+def same_game_history(snaps: list[dict]) -> list[dict]:
+    """Recent snapshots of the same game as the last one (a log can hold several games)."""
+    if not snaps:
+        return []
+    ids = {l.get("id") for l in snaps[-1].get("lines") or []}
+    out = []
+    for snap in reversed(snaps):
+        other = {l.get("id") for l in snap.get("lines") or []}
+        if ids and len(ids & other) < 0.5 * len(ids):
+            break
+        if snap.get("gameTime", 0) > snaps[-1].get("gameTime", 0):
+            break  # an older save was loaded after this one
+        out.append(snap)
+        if len(out) >= QUEUE_HISTORY:
+            break
+    return list(reversed(out))
 
 
 def load_snapshot(path: str) -> dict:
@@ -218,6 +263,32 @@ def line_metrics(line: dict, passenger_id: str | None, year_ticks: float = 14610
     if last.get("vehicleRunningCosts") is not None or last.get("vehicleMaintenance") is not None:
         costs = _num(last.get("vehicleRunningCosts")) + _num(last.get("vehicleMaintenance"))
 
+    # queue: loaded vehicles standing still (not at a terminal) on their way to the same stop
+    stops_list = line.get("stops") or []
+    standing: dict[int, int] = {}
+    for v in vehicles:
+        moving_state = str(v.get("state")) in ("1", "EN_ROUTE")
+        if moving_state and _num(v.get("speed"), 1.0) < QUEUE_SPEED and _num(v.get("loaded")) > 0 \
+                and v.get("engineStopIndex") is not None:
+            idx = int(v["engineStopIndex"])
+            standing[idx] = standing.get(idx, 0) + 1
+    queue = None
+    if standing:
+        idx, count = max(standing.items(), key=lambda kv: kv[1])
+        at_terminal = sum(1 for v in vehicles
+                          if v.get("engineStopIndex") == idx and _num(v.get("daysAtTerminal")) >= 5)
+        if count >= QUEUE_MIN_VEHICLES and count >= QUEUE_MIN_SHARE * len(vehicles):
+            queue = {"stopIndex": idx, "vehicles": count, "longAtTerminal": at_terminal,
+                     "stopName": stops_list[idx].get("stationName") if 0 <= idx < len(stops_list) else None}
+
+    # direction asymmetry on two-stop lines (expected drive times, i.e. what the route itself costs)
+    asymmetry = None
+    legs = [x for x in drive_expected if x]
+    if len(stops_list) == 2 and len(legs) == 2 and min(legs) > 0 and max(legs) / min(legs) >= ASYMMETRY_RATIO:
+        slow = 0 if legs[0] > legs[1] else 1
+        asymmetry = {"ratio": max(legs) / min(legs), "slowLeg": slow, "legsSec": legs,
+                     "from": stops_list[slow].get("stationName"), "to": stops_list[1 - slow].get("stationName")}
+
     m = {
         "id": line.get("id"),
         "name": line.get("name"),
@@ -258,6 +329,8 @@ def line_metrics(line: dict, passenger_id: str | None, year_ticks: float = 14610
         "cargoTypes": sorted(cargo),
         "stoppedVehicles": sum(1 for v in vehicles if v.get("userStopped")),
         "sectionsMeasured": measured,
+        "queue": queue,
+        "asymmetry": asymmetry,
         "stuckAtTerminal": sum(1 for v in vehicles if _num(v.get("daysAtTerminal")) >= 5),
         "noPathVehicles": sum(1 for v in vehicles if v.get("noPath")),
         "vehiclesInDepot": sum(1 for v in vehicles if str(v.get("state")) in ("IN_DEPOT", "GOING_TO_DEPOT")),
@@ -322,6 +395,35 @@ def diagnose(m: dict, shared: dict[int, list[str]], transfers: dict | None = Non
     if m["stuckAtTerminal"]:
         add(Finding("STUCK_AT_TERMINAL", "major", f"{m['stuckAtTerminal']} véhicule(s) à l'arrêt depuis 5 jours ou plus.",
                     "Vérifier les temps d'attente/chargement complet et l'accès à l'arrêt."))
+
+    q = m.get("queue")
+    seen = m.get("queueSeen")  # (exports with a queue, exports scanned, worst queue seen)
+    seen_txt = f" File observée dans {seen[0]} des {seen[1]} derniers exports." if seen and seen[1] > 1 else ""
+    recurring = seen and seen[1] > 1 and seen[0] >= 2 and seen[0] >= QUEUE_RECURRING_SHARE * seen[1]
+    if not q and recurring:
+        q = seen[2]
+        q = dict(q, current=False)
+    if q:
+        now = q.get("current", True)
+        add(Finding("QUEUE", "critical" if q["vehicles"] >= 0.6 * m["vehicles"] else "major",
+                    (f"{q['vehicles']} véhicule(s) chargé(s) sur {m['vehicles']} à l'arrêt en route vers « {q['stopName']} »"
+                     if now else
+                     f"File récurrente vers « {q['stopName']} » (jusqu'à {q['vehicles']} véhicules chargés à l'arrêt)")
+                    + (f", {q['longAtTerminal']} au quai depuis 5 jours ou plus" if now and q["longAtTerminal"] else "")
+                    + "." + seen_txt,
+                    "File d'attente : le déchargement à cet arrêt est le goulot (quais trop peu nombreux, chargement lent "
+                    "ou destination qui n'accepte plus). Retirer des véhicules (ils attendent sans livrer plus) et/ou "
+                    "ajouter des quais ; vérifier la file dans le jeu.",
+                    q))
+    a = m.get("asymmetry")
+    if a:
+        add(Finding("ASYMMETRIC_ROUTE", "major" if q else "minor",
+                    f"Le trajet {a['from']} → {a['to']} dure {a['ratio']:.1f}× plus longtemps que le retour "
+                    f"({a['legsSec'][a['slowLeg']]:.0f} s contre {a['legsSec'][1 - a['slowLeg']]:.0f} s).",
+                    ("Probablement l'attente de la file ci-dessus comptée dans le trajet. " if q else
+                     "Détour dans un sens : sens unique, carrefour ou bretelle manquante, voie unique, forte pente. ")
+                    + "Suivre un véhicule dans le sens lent pour voir où il perd du temps.",
+                    a))
 
     util = m["utilisation"]
     if util is not None and util < LOW_UTILISATION and m["vehicles"] > 1:
@@ -485,17 +587,40 @@ def common_deficit_stops(metrics: list[dict]) -> list[dict]:
         for sg, name in zip(m["stationGroups"], m["stationNames"]):
             names[sg] = name
     for sg in names:
-        users = [m["name"] for m in deficit if sg in m["stationGroups"]]
-        if len(users) >= 2 and sg not in profitable:
-            out.append({"stationGroup": sg, "station": names[sg], "deficitLines": users})
+        if sg in profitable:
+            continue
+        users = [m for m in deficit if sg in m["stationGroups"]]
+        # only lines that can actually exchange something there (same cargo type)
+        for cargo in sorted({c for m in users for c in m["cargoTypes"]}):
+            same = [m["name"] for m in users if cargo in m["cargoTypes"]]
+            if len(same) >= 2:
+                out.append({"stationGroup": sg, "station": names[sg], "deficitLines": same})
+                break
     return out
 
 
-def analyze(snapshot: dict) -> dict:
+def queue_history(history: list[dict], passenger_id, year_ticks) -> dict:
+    """line id -> (exports with a queue, exports scanned, largest queue seen)."""
+    out: dict = {}
+    for snap in history:
+        for line in snap.get("lines") or []:
+            q = line_metrics(line, passenger_id, year_ticks)["queue"]
+            k, n, worst = out.get(line.get("id"), (0, 0, None))
+            if q and (worst is None or q["vehicles"] > worst["vehicles"]):
+                worst = q
+            out[line.get("id")] = (k + (1 if q else 0), n + 1, worst)
+    return out
+
+
+def analyze(snapshot: dict, history: list[dict] | None = None) -> dict:
     pid = snapshot.get("passengerCargoTypeId")
     passenger_id = str(pid) if pid is not None else None
     year_ticks = _num(snapshot.get("yearTicks"), 1461000) or 1461000
     metrics = [line_metrics(l, passenger_id, year_ticks) for l in snapshot.get("lines") or []]
+    if history and len(history) > 1:
+        seen = queue_history(history, passenger_id, year_ticks)
+        for m in metrics:
+            m["queueSeen"] = seen.get(m["id"])
     shared = shared_station_map(metrics)
     transfers = transfer_map(metrics)
     lines = []
@@ -511,6 +636,7 @@ def analyze(snapshot: dict) -> dict:
         "network": snapshot.get("network"),
         "cargoNames": snapshot.get("cargoNames"),
         "exportErrors": snapshot.get("errors") or [],
+        "historyExports": len(history) if history else 1,
         "summary": {
             "lines": len(lines),
             "deficitLines": sum(1 for l in lines if _num(l["metrics"]["net12m"]) < 0),
@@ -591,8 +717,9 @@ def main(argv: list[str] | None = None) -> int:
             print("Aucun export trouvé. Lancer le jeu avec le mod actif, ou passer le chemin du fichier.", file=sys.stderr)
             return 2
         source = candidates[0]
-    snapshot = load_snapshot(source)
-    result = analyze(snapshot)
+    snapshots = load_snapshots(source)
+    snapshot = snapshots[-1]
+    result = analyze(snapshot, same_game_history(snapshots))
     result["source"] = os.path.abspath(source)
 
     if args.json:

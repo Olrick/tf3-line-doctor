@@ -29,7 +29,8 @@ Le jeu n'a pas d'accès réseau depuis Lua : le mod écrit un fichier, Claude le
 
 `NO_VEHICLES`, `GAME_REPORTED_ISSUES`, `NO_PATH`, `IDLE_VEHICLES`, `OVERCAPACITY`, `UNDERCAPACITY`, `LONG_DWELL`,
 `CONGESTION`, `OLD_FLEET`, `POOR_MAINTENANCE`, `LOW_FREQUENCY`, `SHORT_HOPS`, `EMPTY_RETURN`, `COST_STRUCTURE`,
-`DECLINING`, `YOUNG_LINE`, `SHARED_STATIONS`. Les seuils sont en tête de [analyzer/analyze.py](analyzer/analyze.py).
+`DECLINING`, `YOUNG_LINE`, `SHARED_STATIONS`, `QUEUE` (file d'attente, y compris récurrente sur les
+~24 derniers exports), `ASYMMETRIC_ROUTE`, `TRANSFER_DEPENDENT`, `SLOW_CYCLE`, `NO_COMPLETED_TRIP`. Les seuils sont en tête de [analyzer/analyze.py](analyzer/analyze.py).
 
 ## Installation
 
