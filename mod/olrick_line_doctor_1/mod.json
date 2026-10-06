@@ -1,0 +1,27 @@
+{
+    "authors": [
+        {
+            "name": "Olrick",
+            "role": "CREATOR"
+        }
+    ],
+    "cosmetic": true,
+    "dependencies": null,
+    "incompatibilities": null,
+    "modId": "olrick_line_doctor_1",
+    "name": "Line Doctor",
+    "options": null,
+    "params": null,
+    "postRunScript": {
+        "fileName": ""
+    },
+    "preRunScript": {
+        "fileName": ""
+    },
+    "revision": 1,
+    "runScript": {
+        "fileName": ""
+    },
+    "severityAdd": "None",
+    "severityRemove": "None"
+}

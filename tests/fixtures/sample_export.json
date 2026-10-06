@@ -1,0 +1,437 @@
+{
+  "cargoNames": {
+    "0": "Passengers",
+    "5": "Coal"
+  },
+  "company": {
+    "balance": 1500000,
+    "earningsThisYear": 42000,
+    "loan": 500000
+  },
+  "date": {
+    "day": 14,
+    "month": 3,
+    "year": 1905
+  },
+  "errors": [
+    "getBuildVersion: ...d/olrick_line_doctor_1/content/line_doctor/collector.lua:319: attempt to call a nil value (global 'getBuildVersion')",
+    "getBlockedTrains: D:/Documents/OneDrive/TF3-AddOn Lua/tests/mock_api.lua:151: not available in mock"
+  ],
+  "gameTime": 3650000,
+  "generator": "Line Doctor (olrick_line_doctor_1)",
+  "lines": [
+    {
+      "cargo": {
+        "0": {
+          "capacity": 160,
+          "comfortFactor": 1,
+          "driveRealSectionTimes": [
+            [
+              100,
+              5
+            ],
+            [
+              105,
+              5
+            ]
+          ],
+          "driveSectionTimesSec": [
+            95,
+            100
+          ],
+          "frequency": 0.01,
+          "numVehicles": 4,
+          "priceFactor": 1,
+          "realSectionTimes": [
+            [
+              120,
+              5
+            ],
+            [
+              130,
+              5
+            ]
+          ],
+          "sectionTimesSec": [
+            100,
+            100
+          ],
+          "totalCapacity": 160,
+          "used": 20,
+          "waitingPerStop": [
+            2,
+            1
+          ]
+        }
+      },
+      "finance": {
+        "last12Months": {
+          "income": 30000,
+          "net": -30000,
+          "vehicleMaintenance": -10000,
+          "vehicleRunningCosts": -50000
+        },
+        "monthlyNet": [
+          -2501,
+          -2501,
+          -2501,
+          -2501,
+          -2501,
+          -2501,
+          -2501,
+          -2501,
+          -2501,
+          -2501,
+          -2501,
+          -2501
+        ],
+        "previous12Months": {
+          "income": 24000,
+          "net": -24000,
+          "vehicleMaintenance": -8000,
+          "vehicleRunningCosts": -40000
+        }
+      },
+      "id": 100,
+      "intervalSec": 900,
+      "issues": [],
+      "name": "Bus 1",
+      "ratePerYear": 20000,
+      "stopProblems": [],
+      "stops": [
+        {
+          "alternativeTerminals": 0,
+          "engineStopIndex": 0,
+          "index": 1,
+          "loadMode": 0,
+          "maxAdditionalWaitingTime": 0,
+          "maxWaitingTime": 180,
+          "minWaitingTime": 0,
+          "station": 0,
+          "stationGroup": 1001,
+          "stationName": "Gare",
+          "terminal": 0
+        },
+        {
+          "alternativeTerminals": 0,
+          "engineStopIndex": 1,
+          "index": 2,
+          "loadMode": 0,
+          "maxAdditionalWaitingTime": 0,
+          "maxWaitingTime": 180,
+          "minWaitingTime": 0,
+          "station": 0,
+          "stationGroup": 1002,
+          "stationName": "Mairie",
+          "terminal": 0
+        }
+      ],
+      "transportModes": [
+        "BUS"
+      ],
+      "transportedPerYear": 3000,
+      "vehicles": [
+        {
+          "autoDeparture": true,
+          "capacities": {
+            "0": 40
+          },
+          "daysAtTerminal": 0,
+          "daysInDepot": 0,
+          "engineStopIndex": 0,
+          "id": 11,
+          "lastLineStopDeparture": 3649000,
+          "loaded": 5,
+          "name": "Vehicle 11",
+          "noPath": false,
+          "parts": [
+            {
+              "ageYears": 30,
+              "maintenanceState": 0.9,
+              "model": "model_7.mdl"
+            }
+          ],
+          "runningCostPerYear": 12000,
+          "sectionTimesSec": [
+            100,
+            100
+          ],
+          "sellOnArrival": false,
+          "speed": 15,
+          "state": "EN_ROUTE",
+          "userStopped": false
+        },
+        {
+          "autoDeparture": true,
+          "capacities": {
+            "0": 40
+          },
+          "daysAtTerminal": 0,
+          "daysInDepot": 0,
+          "engineStopIndex": 0,
+          "id": 12,
+          "lastLineStopDeparture": 3649000,
+          "loaded": 5,
+          "name": "Vehicle 12",
+          "noPath": false,
+          "parts": [
+            {
+              "ageYears": 30,
+              "maintenanceState": 0.9,
+              "model": "model_7.mdl"
+            }
+          ],
+          "runningCostPerYear": 12000,
+          "sectionTimesSec": [
+            100,
+            100
+          ],
+          "sellOnArrival": false,
+          "speed": 15,
+          "state": "EN_ROUTE",
+          "userStopped": false
+        },
+        {
+          "autoDeparture": true,
+          "capacities": {
+            "0": 40
+          },
+          "daysAtTerminal": 0,
+          "daysInDepot": 0,
+          "engineStopIndex": 0,
+          "id": 13,
+          "lastLineStopDeparture": 3649000,
+          "loaded": 5,
+          "name": "Vehicle 13",
+          "noPath": false,
+          "parts": [
+            {
+              "ageYears": 30,
+              "maintenanceState": 0.9,
+              "model": "model_7.mdl"
+            }
+          ],
+          "runningCostPerYear": 12000,
+          "sectionTimesSec": [
+            100,
+            100
+          ],
+          "sellOnArrival": false,
+          "speed": 15,
+          "state": "EN_ROUTE",
+          "userStopped": false
+        },
+        {
+          "autoDeparture": true,
+          "capacities": {
+            "0": 40
+          },
+          "daysAtTerminal": 0,
+          "daysInDepot": 0,
+          "engineStopIndex": 0,
+          "id": 14,
+          "lastLineStopDeparture": 3649000,
+          "loaded": 5,
+          "name": "Vehicle 14",
+          "noPath": false,
+          "parts": [
+            {
+              "ageYears": 30,
+              "maintenanceState": 0.9,
+              "model": "model_7.mdl"
+            }
+          ],
+          "runningCostPerYear": 12000,
+          "sectionTimesSec": [
+            100,
+            100
+          ],
+          "sellOnArrival": false,
+          "speed": 15,
+          "state": "EN_ROUTE",
+          "userStopped": true
+        }
+      ]
+    },
+    {
+      "cargo": {
+        "5": {
+          "capacity": 40,
+          "comfortFactor": 1,
+          "driveRealSectionTimes": [
+            [
+              250,
+              3
+            ],
+            [
+              240,
+              3
+            ]
+          ],
+          "driveSectionTimesSec": [
+            240,
+            235
+          ],
+          "frequency": 0.01,
+          "numVehicles": 2,
+          "priceFactor": 1,
+          "realSectionTimes": [
+            [
+              300,
+              3
+            ],
+            [
+              280,
+              3
+            ]
+          ],
+          "sectionTimesSec": [
+            100,
+            100
+          ],
+          "totalCapacity": 160,
+          "used": 38,
+          "waitingPerStop": [
+            150,
+            0
+          ]
+        }
+      },
+      "finance": {
+        "last12Months": {
+          "income": 200000,
+          "net": 155000,
+          "vehicleMaintenance": -5000,
+          "vehicleRunningCosts": -40000
+        },
+        "monthlyNet": [
+          12916,
+          12916,
+          12916,
+          12916,
+          12916,
+          12916,
+          12916,
+          12916,
+          12916,
+          12916,
+          12916,
+          12916
+        ],
+        "previous12Months": {
+          "income": 160000,
+          "net": 124000,
+          "vehicleMaintenance": -4000,
+          "vehicleRunningCosts": -32000
+        }
+      },
+      "id": 200,
+      "intervalSec": 240,
+      "issues": [],
+      "name": "Coal A",
+      "ratePerYear": 10000,
+      "stopProblems": [],
+      "stops": [
+        {
+          "alternativeTerminals": 0,
+          "engineStopIndex": 0,
+          "index": 1,
+          "loadMode": 0,
+          "maxAdditionalWaitingTime": 0,
+          "maxWaitingTime": 180,
+          "minWaitingTime": 0,
+          "station": 0,
+          "stationGroup": 2001,
+          "stationName": "Mine",
+          "terminal": 0
+        },
+        {
+          "alternativeTerminals": 0,
+          "engineStopIndex": 1,
+          "index": 2,
+          "loadMode": 0,
+          "maxAdditionalWaitingTime": 0,
+          "maxWaitingTime": 180,
+          "minWaitingTime": 0,
+          "station": 0,
+          "stationGroup": 2002,
+          "stationName": "Steel",
+          "terminal": 0
+        }
+      ],
+      "transportModes": [
+        "BUS"
+      ],
+      "transportedPerYear": 9000,
+      "vehicles": [
+        {
+          "autoDeparture": true,
+          "capacities": {
+            "5": 20
+          },
+          "daysAtTerminal": 0,
+          "daysInDepot": 0,
+          "engineStopIndex": 0,
+          "id": 21,
+          "lastLineStopDeparture": 3649000,
+          "loaded": 19,
+          "name": "Vehicle 21",
+          "noPath": false,
+          "parts": [
+            {
+              "ageYears": 2,
+              "maintenanceState": 0.9,
+              "model": "model_7.mdl"
+            }
+          ],
+          "runningCostPerYear": 12000,
+          "sectionTimesSec": [
+            100,
+            100
+          ],
+          "sellOnArrival": false,
+          "speed": 15,
+          "state": "EN_ROUTE",
+          "userStopped": false
+        },
+        {
+          "autoDeparture": true,
+          "capacities": {
+            "5": 20
+          },
+          "daysAtTerminal": 0,
+          "daysInDepot": 0,
+          "engineStopIndex": 0,
+          "id": 22,
+          "lastLineStopDeparture": 3649000,
+          "loaded": 19,
+          "name": "Vehicle 22",
+          "noPath": false,
+          "parts": [
+            {
+              "ageYears": 2,
+              "maintenanceState": 0.9,
+              "model": "model_7.mdl"
+            }
+          ],
+          "runningCostPerYear": 12000,
+          "sectionTimesSec": [
+            100,
+            100
+          ],
+          "sellOnArrival": false,
+          "speed": 15,
+          "state": "EN_ROUTE",
+          "userStopped": false
+        }
+      ]
+    }
+  ],
+  "network": {
+    "noPathVehicles": 0
+  },
+  "passengerCargoTypeId": 0,
+  "schemaVersion": 1,
+  "year": 1905,
+  "yearTicks": 730000
+}
