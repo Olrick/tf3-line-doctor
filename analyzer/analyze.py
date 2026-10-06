@@ -148,6 +148,19 @@ def load_snapshots(path: str) -> list[dict]:
     return snaps
 
 
+def load_history(source: str | None) -> list[dict]:
+    """All snapshots of the game of the most recent export: the game log is first archived to
+    exports/<gameId>/ (one file per export), so history survives game restarts (stdout.txt is reset)."""
+    import archive
+    if source is None or source.lower().endswith("stdout.txt"):
+        log = source or next((c for c in default_candidates() if c.lower().endswith("stdout.txt")), None)
+        if log:
+            game_dir = archive.sync(log)
+            if game_dir:
+                return archive.load_game(game_dir)
+    return load_snapshots(source) if source else []
+
+
 def same_game_history(snaps: list[dict]) -> list[dict]:
     """Recent snapshots of the same game as the last one (a log can hold several games)."""
     if not snaps:
@@ -797,7 +810,7 @@ def main(argv: list[str] | None = None) -> int:
             print("Aucun export trouvé. Lancer le jeu avec le mod actif, ou passer le chemin du fichier.", file=sys.stderr)
             return 2
         source = candidates[0]
-    snapshots = load_snapshots(source)
+    snapshots = load_history(source)
     snapshot = snapshots[-1]
     result = analyze(snapshot, same_game_history(snapshots))
     result["source"] = os.path.abspath(source)

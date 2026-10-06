@@ -336,7 +336,7 @@ end
 
 -- The game's finance table (same data as the vanilla "Finances" window): every journal key with one value
 -- per period column, plus totals. Labels are resolved from the JournalEntry enums.
-local function collectFinanceTable(api, player)
+local function collectFinanceTable(api, player, count, interval)
 	local fin = api.engine.util.finance
 	if fin.computeFinanceTable == nil or api.type.ChartConfig == nil then return nil end
 	local JE = api.type.JournalEntry
@@ -345,7 +345,8 @@ local function collectFinanceTable(api, player)
 		return enumName(enumTable, value)
 	end
 	local config = api.type.ChartConfig.new()
-	config.count = 4
+	config.count = count or 4
+	if interval then config.interval = interval end
 	local fd = fin.computeFinanceTable(player, config)
 	local out = {
 		headers = list(fd.header), total = list(fd.total), balance = list(fd.balance),
@@ -534,6 +535,8 @@ function M.collect(api)
 	}
 
 	snapshot.financeTable = player and try("computeFinanceTable", collectFinanceTable, api, player)
+	-- the whole company history, one column per simulated year (the engine keeps its journal since the start)
+	snapshot.financeHistory = player and try("finance history", collectFinanceTable, api, player, 150, yearTicks)
 	snapshot.infrastructure = player and try("infrastructure", collectInfrastructure, api, player)
 
 	local stateEnum = try("TransportVehicleState enum", function() return api.type.enum.TransportVehicleState end)

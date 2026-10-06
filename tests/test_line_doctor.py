@@ -17,6 +17,8 @@ sys.path.insert(0, str(ROOT / "analyzer"))
 import analyze  # noqa: E402
 import chains  # noqa: E402
 import infra as infra_mod  # noqa: E402
+import archive  # noqa: E402
+import history  # noqa: E402
 
 try:
     from lupa import LuaRuntime
@@ -317,6 +319,30 @@ class LuaModTest(unittest.TestCase):
         self.assertEqual(sum(b["cost"] for b in report["buildings"]), 80000)  # mock: component costs only
         self.assertEqual(report["kinds"]["gare de marchandises (route)"]["unused"], 1)
         self.assertIn("sans aucune ligne", infra_mod.render(report))
+
+    def test_archive_keeps_one_file_per_export_per_game(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            log = Path(tmp) / "stdout.txt"
+            def block(snap):
+                text = json.dumps(snap)
+                return (f"x [LineDoctor] LINE_DOCTOR_BEGIN {len(text)}\n"
+                        f"x [LineDoctor] LINE_DOCTOR|{text}\n"
+                        "x [LineDoctor] LINE_DOCTOR_END\n")
+            snaps = [{"gameId": "A", "gameTime": t, "lines": []} for t in (100, 200)] + [{"gameId": "B", "gameTime": 50, "lines": []}]
+            log.write_text("".join(block(x) for x in snaps), encoding="utf-8")
+            root = Path(tmp) / "exports"
+            folder = archive.sync(str(log), root)
+            self.assertEqual(folder.name, "B")                       # game of the latest export
+            self.assertEqual(len(archive.load_game(root / "A")), 2)
+            archive.sync(str(log), root)                             # idempotent
+            self.assertEqual(len(list((root / "A").glob("0*.json"))), 2)
+
+    def test_history_groups_years(self):
+        h = history.build({"financeHistory": self.collect()["financeTable"]})
+        self.assertEqual(h["headers"], ["1981", "1982"])
+        self.assertEqual(h["groups"]["Recettes"], [40000, 42000])
+        self.assertEqual(h["groups"]["Entretien des bâtiments"], [-25000, -27000])
+        self.assertIn("Historique", history.render(h))
 
     def test_end_to_end_diagnostics(self):
         result = analyze.analyze(self.collect())

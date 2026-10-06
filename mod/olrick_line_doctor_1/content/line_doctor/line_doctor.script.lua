@@ -88,13 +88,14 @@ local function writeToLog(compact)
 	log("LINE_DOCTOR_END")
 end
 
-local function export(reason, ticketProbe, pendingIncome)
+local function export(reason, ticketProbe, pendingIncome, gameId)
 	local ok, snapshot = pcall(collector.collect, api)
 	if not ok then
 		log("collect failed: " .. tostring(snapshot))
 		return false
 	end
 	snapshot.exportReason = reason
+	snapshot.gameId = gameId
 	snapshot.ticketProbe = ticketProbe
 	snapshot.pendingIncome = pendingIncome
 
@@ -132,6 +133,10 @@ function data()
 			end)
 
 			local s = state:get() or {}
+			-- identifies this game across sessions (saved with it), so exports can be archived per game
+			if s.gameId == nil then
+				s.gameId = string.format("%d-%d", math.floor((clock() or 0)), math.random(100000, 999999))
+			end
 			local monthTicks = api.util.getDefaultMonthDuration()
 
 			local realNow = clock()
@@ -187,7 +192,7 @@ function data()
 				pendingIncome = { error = "pending.lua not loaded: restart the game application" }
 			end
 			state:set(s)
-			export(reason, ticketProbe, pendingIncome)
+			export(reason, ticketProbe, pendingIncome, s.gameId)
 		end,
 
 		-- never returns a value: ticket prices are observed, not modified

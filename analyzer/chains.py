@@ -343,11 +343,7 @@ def main(argv=None) -> int:
     ap.add_argument("--deficit", action="store_true", help="only chains whose result is negative, worst first")
     ap.add_argument("--line", help="only chains with a line whose name contains this text")
     args = ap.parse_args(argv)
-    source = args.source or (analyze.default_candidates() or [None])[0]
-    if not source:
-        print("Aucun export trouvé.", file=sys.stderr)
-        return 2
-    snaps = [s for s in analyze.load_snapshots(source) if (s.get("pendingIncome") or {}).get("prefixes") is not None]
+    snaps = [s for s in analyze.load_history(args.source) if (s.get("pendingIncome") or {}).get("prefixes") is not None]
     if not snaps:
         print("Aucun export ne contient encore les chaînes : relancer le jeu avec la dernière version du mod.", file=sys.stderr)
         return 3

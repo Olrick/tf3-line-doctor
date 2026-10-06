@@ -34,6 +34,15 @@ bâtiment par bâtiment (gares sans ligne, bâtiments coûteux) :
 python analyzer/infra.py --html out/infrastructure.html
 ```
 
+Historique de la compagnie année par année (journal du jeu, depuis le début de la partie) :
+
+```bash
+python analyzer/history.py --html out/historique.html     # pivot = pic de trésorerie, ou --pivot 1960
+```
+
+Les exports sont archivés automatiquement par partie dans `exports/<gameId>/` à chaque analyse
+(le journal du jeu est effacé à chaque lancement) ; `python analyzer/archive.py` le fait à la main.
+
 Pour une ligne précise, lire aussi ses données brutes dans l'export (`lines[]` où `name` correspond) :
 temps de section réels vs théoriques, attente par arrêt, capacités et âge de chaque véhicule, modes de chargement.
 
