@@ -309,6 +309,7 @@ class LuaModTest(unittest.TestCase):
         self.assertEqual((truck["kind"], truck["lines"]), ("gare de marchandises (route)", []))
         self.assertEqual((bus["kind"], bus["lines"], bus["name"]), ("arrêt / gare routière", [100], "Gare"))
         self.assertEqual(infra["via"], {"stations": 2})
+        self.assertEqual(bus["costParts"]["building"], 30000)
         # report: costs scaled on the finance table's infrastructure upkeep (mock: 25 000 / period)
         snap = self.collect()
         report = infra_mod.build(snap)

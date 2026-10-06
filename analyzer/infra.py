@@ -54,7 +54,9 @@ def build(snapshot: dict) -> dict:
         raise ValueError("pas de données d'infrastructure dans l'export (mettre à jour le mod et relancer le jeu)")
     raw_total = infra.get("total") or 0
     finance = infra_upkeep_from_finance(snapshot)
-    scale = (finance / raw_total) if finance and raw_total else 1.0
+    unknown = sum(1 for b in infra.get("buildings") or [] if not b.get("cost"))
+    # scaling on the finance table is only valid when every building has a cost
+    scale = (finance / raw_total) if (finance and raw_total and unknown == 0) else 1.0
     lines = {l["id"]: l for l in snapshot.get("lines") or []}
 
     buildings = []
@@ -68,7 +70,7 @@ def build(snapshot: dict) -> dict:
             "linesNet": sum(f.get("net") or 0 for f in fin),
             "linesIncome": sum(f.get("income") or 0 for f in fin),
             "transported": sum(analyze._num(l.get("transportedPerYear")) for l in served),
-            "depots": b.get("depots") or 0,
+            "depots": b.get("depots") or 0, "costKnown": bool(b.get("cost")), "parts": b.get("costParts"),
         })
 
     kinds: dict[str, dict] = {}
@@ -81,7 +83,7 @@ def build(snapshot: dict) -> dict:
             k["unusedCost"] += b["cost"]
     return {
         "date": snapshot.get("date"), "scale": scale, "financeUpkeep": finance, "rawTotal": raw_total,
-        "buildings": buildings, "kinds": kinds,
+        "buildings": buildings, "kinds": kinds, "unknown": unknown, "scaled": scale != 1.0,
         "street": _finance_row(snapshot, "routes ("), "track": _finance_row(snapshot, "voies ferrées"),
         "other": (infra.get("other") or {}).get("cost", 0) * scale,
         "otherSamples": (infra.get("other") or {}).get("samples") or [],
@@ -116,9 +118,12 @@ def render(r: dict) -> str:
                 f"<td class='r'>{_m(b['transported'])}</td><td class='r'>{_m(b['linesIncome'])}</td>"
                 f"<td class='r {'neg' if b['linesNet'] < 0 else 'pos'}'>{_m(b['linesNet'])}</td></tr>")
 
-    scale_note = (f"Coûts recalés sur le tableau des finances du jeu (entretien de l'infrastructure ≈ {_m(r['financeUpkeep'])}/an ; "
-                  f"facteur {r['scale']:.3g} appliqué au coût brut du moteur)." if r["financeUpkeep"]
-                  else "Coûts bruts du moteur (unité non confirmée : pas de tableau des finances dans l'export).")
+    if r["scaled"]:
+        scale_note = (f"Coûts recalés sur le tableau des finances du jeu (entretien des bâtiments ≈ {_m(r['financeUpkeep'])}/an ; "
+                      f"facteur {r['scale']:.3g} appliqué au coût du moteur).")
+    else:
+        scale_note = (f"Coûts du moteur, unité non confirmée ({r['unknown']} bâtiments sans coût lisible) ; le tableau des "
+                      f"finances indique ≈ {_m(r['financeUpkeep'])}/an d'entretien des bâtiments. Comparer les bâtiments entre eux.")
     return f"""<!doctype html>
 <html lang="fr"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Entretien de l'infrastructure</title>

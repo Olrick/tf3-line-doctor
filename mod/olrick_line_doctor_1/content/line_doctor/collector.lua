@@ -455,28 +455,40 @@ local function collectInfrastructure(api, player)
 				end
 			end
 			b.depots = #list(con.depots)
-			-- cost: the building's own component, else the engine's per-station-group computation
-			local cost
-			pcall(function()
-				local mc = api.engine.getComponent(e, C.MAINTENANCE_COST)
-				if mc then cost = num(mc.maintenanceCost) end
-			end)
-			if (cost == nil or cost == 0) and #b.groups > 0 then
-				local sum = 0
-				for _, g in ipairs(b.groups) do
-					sum = sum + (num(try("calcMaintenanceForStationGroup",
-						api.engine.util.maintenance.calcMaintenanceForStationGroup, g)) or 0)
-				end
-				if sum > 0 then
-					cost = sum
-					b.costSource = "stationGroup"
+			-- every place the engine may keep the cost: the building, its stations, depots and modules
+			local function mcOf(entity)
+				local v = 0
+				pcall(function()
+					local mc = api.engine.getComponent(entity, C.MAINTENANCE_COST)
+					if mc then v = num(mc.maintenanceCost) or 0 end
+				end)
+				return v
+			end
+			local maint = api.engine.util.maintenance or {}
+			local parts = { building = mcOf(e), stations = 0, depots = 0, modules = 0, group = 0, subcon = 0 }
+			for _, x in ipairs(list(con.stations)) do parts.stations = parts.stations + mcOf(x) end
+			for _, x in ipairs(list(con.depots)) do parts.depots = parts.depots + mcOf(x) end
+			for _, x in ipairs(list(con.subconstructions)) do
+				parts.modules = parts.modules + mcOf(x)
+				if maint.calcMaintenanceForSubconstruction then
+					parts.subcon = parts.subcon + (num(try("calcMaintenanceForSubconstruction",
+						maint.calcMaintenanceForSubconstruction, x)) or 0)
 				end
 			end
-			if cost == nil or cost == 0 then
-				out.costUnknown = out.costUnknown + 1
-				return
+			for _, g in ipairs(b.groups) do
+				if maint.calcMaintenanceForStationGroup then
+					parts.group = parts.group + (num(try("calcMaintenanceForStationGroup",
+						maint.calcMaintenanceForStationGroup, g)) or 0)
+				end
 			end
+			b.costParts = parts
+			b.modules = #list(con.subconstructions)
+			-- direct components first; the engine's computations as fallback
+			local cost = parts.building + parts.stations + parts.depots + parts.modules
+			if cost == 0 then cost = parts.group end
+			if cost == 0 then cost = parts.subcon end
 			b.cost = cost
+			if cost == 0 then out.costUnknown = out.costUnknown + 1 end
 			out.total = out.total + cost
 			out.buildings[#out.buildings + 1] = b
 		end)
