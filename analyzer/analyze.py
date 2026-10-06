@@ -39,6 +39,7 @@ DECLINE_RATIO = 0.25         # net result dropped by more than 25 % of revenue
 YOUNG_LINE_MONTHS = 6        # below this, structural verdicts are premature
 YOUNG_LINE_CYCLES = 2        # ... or fewer round trips than this
 SLOW_CYCLE_MONTHS = 3        # round trip longer than this: monthly results are lumpy
+STUCK_DAYS = 30              # a game day is ~4 s: 30 days ≈ 2 min at a terminal
 QUEUE_MIN_VEHICLES = 3       # loaded vehicles standing still on the way to the same stop...
 QUEUE_MIN_SHARE = 0.4        # ...and at least this share of the fleet
 QUEUE_SPEED = 0.5            # m/s, below = standing still
@@ -276,7 +277,7 @@ def line_metrics(line: dict, passenger_id: str | None, year_ticks: float = 14610
     if standing:
         idx, count = max(standing.items(), key=lambda kv: kv[1])
         at_terminal = sum(1 for v in vehicles
-                          if v.get("engineStopIndex") == idx and _num(v.get("daysAtTerminal")) >= 5)
+                          if v.get("engineStopIndex") == idx and _num(v.get("daysAtTerminal")) >= STUCK_DAYS)
         if count >= QUEUE_MIN_VEHICLES and count >= QUEUE_MIN_SHARE * len(vehicles):
             queue = {"stopIndex": idx, "vehicles": count, "longAtTerminal": at_terminal,
                      "stopName": stops_list[idx].get("stationName") if 0 <= idx < len(stops_list) else None}
@@ -331,7 +332,7 @@ def line_metrics(line: dict, passenger_id: str | None, year_ticks: float = 14610
         "sectionsMeasured": measured,
         "queue": queue,
         "asymmetry": asymmetry,
-        "stuckAtTerminal": sum(1 for v in vehicles if _num(v.get("daysAtTerminal")) >= 5),
+        "stuckAtTerminal": sum(1 for v in vehicles if _num(v.get("daysAtTerminal")) >= STUCK_DAYS),
         "noPathVehicles": sum(1 for v in vehicles if v.get("noPath")),
         "vehiclesInDepot": sum(1 for v in vehicles if str(v.get("state")) in ("IN_DEPOT", "GOING_TO_DEPOT")),
         "loadModes": sorted({str(s.get("loadMode")) for s in (line.get("stops") or []) if s.get("loadMode") is not None}),
@@ -393,7 +394,7 @@ def diagnose(m: dict, shared: dict[int, list[str]], transfers: dict | None = Non
                     f"Aucun trajet terminé pour l'instant (aller-retour ≈ {m['cycleMonths'] or 0:.1f} mois de calendrier).",
                     "Normal au démarrage : attendre au moins un aller-retour avant de juger la ligne."))
     if m["stuckAtTerminal"]:
-        add(Finding("STUCK_AT_TERMINAL", "major", f"{m['stuckAtTerminal']} véhicule(s) à l'arrêt depuis 5 jours ou plus.",
+        add(Finding("STUCK_AT_TERMINAL", "major", f"{m['stuckAtTerminal']} véhicule(s) au quai depuis {STUCK_DAYS} jours ou plus (≈ {STUCK_DAYS * 4} s de jeu).",
                     "Vérifier les temps d'attente/chargement complet et l'accès à l'arrêt."))
 
     q = m.get("queue")
@@ -409,7 +410,7 @@ def diagnose(m: dict, shared: dict[int, list[str]], transfers: dict | None = Non
                     (f"{q['vehicles']} véhicule(s) chargé(s) sur {m['vehicles']} à l'arrêt en route vers « {q['stopName']} »"
                      if now else
                      f"File récurrente vers « {q['stopName']} » (jusqu'à {q['vehicles']} véhicules chargés à l'arrêt)")
-                    + (f", {q['longAtTerminal']} au quai depuis 5 jours ou plus" if now and q["longAtTerminal"] else "")
+                    + (f", {q['longAtTerminal']} au quai depuis {STUCK_DAYS} jours ou plus" if now and q["longAtTerminal"] else "")
                     + "." + seen_txt,
                     "File d'attente : le déchargement à cet arrêt est le goulot (quais trop peu nombreux, chargement lent "
                     "ou destination qui n'accepte plus). Retirer des véhicules (ils attendent sans livrer plus) et/ou "
