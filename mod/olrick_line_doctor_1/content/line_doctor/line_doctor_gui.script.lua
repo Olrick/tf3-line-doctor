@@ -3,7 +3,8 @@
 -- Two plugins, registered by the .res.lua files next to this script:
 --   * LineDoctorLineCard : a "Line Doctor" card in every line window (LineEowExtensionPoint), built like the
 --     game's own line cards;
---   * LineDoctorCompass  : a compass in the top game bar (GameBarInfoDisplayExtension), next to "Earnings".
+--   * LineDoctorCompass  : a compass at the top left of the screen (ModEntryPointExtension: root UI nodes,
+--     placed top-left by the game; styled by line_doctor.css.lua so it stays readable over the 3D view).
 --
 -- No mod button/window: plugin recipes must return a layout, and game windows are opened through the
 -- window container of gameCtx, which the mod button area does not provide (crash "Recipe child must be a
@@ -17,7 +18,7 @@ local builtin = ug_require "::/gui/main/builtin.lua"
 local content_card = ug_require "::/gui/main/content_card.tl"
 local engine_react_util = ug_require "::/gui/main/engine_react_util.tl"
 local line_eow = ug_require "::/gui/entity_window/line/line_eow.script.tl"
-local game_bar_widgets = ug_require "::/gui/game_bar/game_bar_widgets.tl"
+local mod_entry_point = ug_require "::/gui/main/mod_entry_point.tl"
 
 local GAME_SCRIPT = "olrick_line_doctor_1::/line_doctor/line_doctor.gs"
 
@@ -116,22 +117,34 @@ local COMPASS_SIGN = 1
 local DIRECTIONS = { "N", "NE", "E", "SE", "S", "SW", "W", "NW" }
 
 local function compassState()
-	local out = { heading = nil, raw = nil }
-	pcall(function()
+	local out = { heading = nil, raw = nil, err = nil }
+	local ok, err = pcall(function()
+		if api.gui == nil or api.gui.camera == nil then error("api.gui.camera indisponible ici") end
 		local cam = api.gui.camera.getCameraData()
-		local angle = cam.w
-		if angle == nil then angle = cam[4] end
+		if cam == nil then error("getCameraData() renvoie nil") end
+		-- Vec5f {x, y, distance, angle, pitch}: the game's tutorial reads the angle as `.w`
+		local angle
+		for _, read in ipairs({
+			function() return cam.w end, function() return cam[4] end, function() return cam.angle end,
+		}) do
+			if angle == nil then
+				local okRead, v = pcall(read)
+				if okRead and type(v) == "number" then angle = v end
+			end
+		end
+		if angle == nil then error("angle introuvable dans " .. tostring(cam)) end
 		local raw = math.deg(angle)
 		out.raw = raw
 		out.heading = (COMPASS_OFFSET_DEG + COMPASS_SIGN * raw) % 360
 	end)
+	if not ok then out.err = tostring(err) end
 	return out
 end
 
-local LineDoctorCompass = react.RegisterPluginRecipe(game_bar_widgets.GameBarInfoDisplayExtension, "LineDoctorCompass", function()
+local LineDoctorCompass = react.RegisterPluginRecipe(mod_entry_point.ModEntryPointExtension, "LineDoctorCompass", function()
 	local state = engine_react_util.useStepStateTimer(compassState, 0.1)
 	local s = state:old()
-	local label, tip = "?", "Boussole Line Doctor : orientation indisponible"
+	local label, tip = "?", "Boussole Line Doctor : " .. tostring(s.err or "orientation indisponible")
 	if s.heading then
 		label = DIRECTIONS[math.floor((s.heading + 22.5) / 45) % 8 + 1]
 		tip = string.format("Boussole Line Doctor : cap %d° (angle brut de la caméra %.0f°). N = axe y de la carte.",
@@ -141,7 +154,7 @@ local LineDoctorCompass = react.RegisterPluginRecipe(game_bar_widgets.GameBarInf
 		orientation = builtin.type.Orientation.Horizontal,
 		children = {
 			builtin.Component {
-				meta = { tooltip = tip },
+				meta = { tooltip = tip, class = "line-doctor-compass" },
 				layout = builtin.BoxLayout{
 					orientation = builtin.type.Orientation.Horizontal,
 					children = {

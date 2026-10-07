@@ -3,6 +3,7 @@
     "files": [
         "line_doctor/collector.lua",
         "line_doctor/json.lua",
+        "line_doctor/line_doctor.css.lua",
         "line_doctor/line_doctor.gs.lua",
         "line_doctor/line_doctor.script.lua",
         "line_doctor/line_doctor_card.res.lua",
