@@ -502,6 +502,88 @@ local function collectInfrastructure(api, player)
 	return out
 end
 
+-- ---------------------------------------------------------------------------
+-- health check, shown in the game bar (same thresholds as analyzer/health.py)
+-- ---------------------------------------------------------------------------
+
+-- Computed on the last complete months of the finance table, with the transport income projected at the max
+-- company rank (TF3 "inflation"): income x multiplier at max rank / current multiplier, costs unchanged.
+-- Subsidies are left out (one-off).
+M.HEALTH_RATIOS = {
+	{ key = "running", name = "Recettes ÷ fonctionnement des véhicules", good = 2.0, bad = 1.7, higher = true, pct = false },
+	{ key = "buildings", name = "Entretien des bâtiments ÷ recettes", good = 0.20, bad = 0.28, higher = false, pct = true },
+	{ key = "vmaint", name = "Entretien des véhicules ÷ recettes", good = 0.09, bad = 0.11, higher = false, pct = true },
+	{ key = "margin", name = "Résultat d'exploitation ÷ recettes", good = 0.10, bad = 0.0, higher = true, pct = true },
+}
+-- the engine's JournalEntry enums do not iterate in Lua: the finance table holds their numeric values
+-- (mapping checked on a real save, see analyzer/analyze.py ENUM_CODES)
+local JE_TYPE_CODES = { [4] = "MAINTENANCE", [5] = "INCOME", [7] = "SUBSIDY" }
+local JE_MAINT_CODES = { [0] = "VEHICLE", [1] = "INFRASTRUCTURE", [2] = "OTHER", [3] = "VEHICLE_MAINTENANCE" }
+local JE_ROAD_OR_TRACK = { [0] = true, [1] = true, STREET = true, ROAD = true, TRACK = true }
+
+local function healthLevel(value, r)
+	if value == nil then return "gris" end
+	if r.higher then
+		return value >= r.good and "vert" or value >= r.bad and "orange" or "rouge"
+	end
+	return value <= r.good and "vert" or value <= r.bad and "orange" or "rouge"
+end
+
+--- Health of the company from a finance table (collectFinanceTable output) and snapshot.company.
+-- The last column of the table is the period in progress and is left out.
+function M.health(ft, company)
+	if ft == nil or ft.entries == nil or ft.headers == nil or #ft.headers == 0 then return nil end
+	local last = math.max(#ft.headers - 1, 1)
+	local t = { income = 0, running = 0, vmaint = 0, buildings = 0, roads = 0, other = 0 }
+	for _, e in ipairs(ft.entries) do
+		local sum = 0
+		for i = 1, last do sum = sum + (num(e.values and e.values[i]) or 0) end
+		local typ = JE_TYPE_CODES[e.type] or e.type
+		if typ == "INCOME" then
+			t.income = t.income + sum
+		elseif typ == "MAINTENANCE" then
+			local maint = JE_MAINT_CODES[e.maint] or e.maint
+			if maint == "VEHICLE" then
+				t.running = t.running + sum
+			elseif maint == "VEHICLE_MAINTENANCE" then
+				t.vmaint = t.vmaint + sum
+			elseif maint == "INFRASTRUCTURE" then
+				local k = JE_ROAD_OR_TRACK[e.construction] and "roads" or "buildings"
+				t[k] = t[k] + sum
+			else
+				t.other = t.other + sum
+			end
+		end
+	end
+	company = company or {}
+	local current = num(company.priceMultiplier) or 1
+	local atMax = num(company.priceMultiplierAtMaxRank) or current
+	local scale = (current > 0) and (atMax / current) or 1
+	local income = t.income * scale
+	local values = {}
+	if income > 0 then
+		values.running = (t.running < 0) and (income / -t.running) or nil
+		values.buildings = -t.buildings / income
+		values.vmaint = -t.vmaint / income
+		values.margin = (income + t.running + t.vmaint + t.buildings + t.roads + t.other) / income
+	end
+	local out = {
+		periods = last, firstPeriod = ft.headers[1], lastPeriod = ft.headers[last],
+		rank = company.rank, maxRank = company.maxRank or 15,
+		multiplier = current, multiplierAtMaxRank = atMax, scale = scale,
+		incomeNow = t.income, incomeAtMaxRank = income, ratios = {}, worst = "vert",
+	}
+	local order = { vert = 1, gris = 2, orange = 3, rouge = 4 }
+	for _, r in ipairs(M.HEALTH_RATIOS) do
+		local v = values[r.key]
+		local lvl = healthLevel(v, r)
+		out.ratios[#out.ratios + 1] = { key = r.key, name = r.name, value = v, level = lvl, good = r.good, bad = r.bad,
+			higher = r.higher, pct = r.pct }
+		if order[lvl] > order[out.worst] then out.worst = lvl end
+	end
+	return out
+end
+
 --- Collects the full snapshot.
 -- @param api the game api table
 -- @return a plain lua table ready for json encoding
@@ -558,6 +640,10 @@ function M.collect(api)
 	snapshot.financeTable = player and try("computeFinanceTable", collectFinanceTable, api, player)
 	-- the whole company history, one column per simulated year (the engine keeps its journal since the start)
 	snapshot.financeHistory = player and try("finance history", collectFinanceTable, api, player, 150, yearTicks)
+	-- the last 12 months, one column per month (+ the month in progress), for the in-game health check
+	local monthTicks = try("getDefaultMonthDuration", api.util.getDefaultMonthDuration) or (yearTicks / 12)
+	snapshot.financeLast12Months = player and try("finance last 12 months", collectFinanceTable, api, player, 13, monthTicks)
+	snapshot.health = try("health", M.health, snapshot.financeLast12Months, snapshot.company)
 	snapshot.infrastructure = player and try("infrastructure", collectInfrastructure, api, player)
 
 	local stateEnum = try("TransportVehicleState enum", function() return api.type.enum.TransportVehicleState end)

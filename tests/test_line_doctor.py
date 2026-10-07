@@ -129,6 +129,7 @@ class LuaModTest(unittest.TestCase):
             self.assertEqual(len((Path(tmp) / "history.jsonl").read_text().splitlines()), 1)
             logs = list(self.lua.eval("logLines").values())
             self.assertTrue(any("exported 2 lines" in l for l in logs), logs)
+            self.assertEqual(self.lua.eval("saved.health.worst"), "rouge")  # read by the game bar
 
             # The game runs update() on several threads, each with its own Lua state:
             # a fresh state sharing the saved game-script state must not export again.
@@ -295,6 +296,45 @@ class LuaModTest(unittest.TestCase):
         snap = analyze.extract_from_log(log_text)
         self.assertIsNotNone(snap)
         self.assertEqual(len(snap["lines"]), 2)
+
+    def test_health_projected_at_max_rank(self):
+        snap = self.collect()
+        h = snap["health"]
+        # last complete column of the mocked table: income 40000, running -20000, infrastructure -25000;
+        # income projected at max rank: x 0.75 (Normal inflation) / 0.8036 (current multiplier)
+        self.assertEqual(h["periods"], 1)
+        self.assertAlmostEqual(h["scale"], 0.75 / 0.8036, places=4)
+        r = {x["key"]: x for x in h["ratios"]}
+        self.assertAlmostEqual(r["running"]["value"], 40000 * h["scale"] / 20000, places=4)
+        self.assertEqual(r["running"]["level"], "orange")
+        self.assertEqual(r["buildings"]["level"], "rouge")
+        self.assertEqual(r["vmaint"]["level"], "vert")
+        self.assertEqual(r["margin"]["level"], "rouge")
+        self.assertEqual(h["worst"], "rouge")
+        self.assertIn("financeLast12Months", snap)
+
+    def test_health_reads_numeric_journal_codes(self):
+        # in game the JournalEntry enums do not iterate: entries hold numbers (5 income, 4 maintenance, ...)
+        h = json.loads(self.lua.eval("""(function()
+            local collector = ug_require("olrick_line_doctor_1::/line_doctor/collector.lua")
+            local json = ug_require("olrick_line_doctor_1::/line_doctor/json.lua")
+            local ft = { headers = { "m1", "m2", "now" }, entries = {
+                { type = 5, values = { 100, 100, 999 } },                     -- income
+                { type = 7, values = { 1000, 0, 0 } },                        -- subsidy: left out
+                { type = 4, maint = 0, values = { -30, -30, -999 } },          -- running costs
+                { type = 4, maint = 3, values = { -5, -5, 0 } },               -- vehicle maintenance
+                { type = 4, maint = 1, construction = 0, values = { -10, -10, 0 } }, -- roads
+                { type = 4, maint = 1, construction = 6, values = { -20, -20, 0 } }, -- buildings
+            } }
+            return json.encode(collector.health(ft, { priceMultiplier = 1, priceMultiplierAtMaxRank = 1 }))
+        end)()"""))
+        r = {x["key"]: x for x in h["ratios"]}
+        self.assertEqual(h["periods"], 2)
+        self.assertAlmostEqual(r["running"]["value"], 200 / 60, places=4)
+        self.assertAlmostEqual(r["buildings"]["value"], 0.2, places=4)
+        self.assertAlmostEqual(r["vmaint"]["value"], 0.05, places=4)
+        self.assertAlmostEqual(r["margin"]["value"], (200 - 60 - 10 - 20 - 40) / 200, places=4)
+        self.assertEqual(h["worst"], "vert")
 
     def test_company_finance_table(self):
         fs = analyze.finance_summary(self.collect())

@@ -76,6 +76,11 @@ de maintenance il descend jusqu'à 0 ; un mauvais état augmente les coûts de f
 **Files d'attente :** `QUEUE` s'appuie sur l'historique des exports du journal (récurrence sur ~2 ans de jeu). Un
 voyage aller 3× plus long que le retour (`ASYMMETRIC_ROUTE`) avec une file = attente au déchargement, pas un détour.
 
+**Passagers en attente = stock, pas flux (vérifié en jeu, 1915) :** 20 à 30 passagers en attente sur une ligne de bus
+ne valent pas un bus de plus plein toute l'année. Un postbus ajouté sur 3 lignes « saturées » n'a rapporté que +8 à
++13 k/an de recettes (file résorbée) pour 27 k/an de coûts. Estimer le gain d'un véhicule ajouté avec prudence (≈ 1/5
+des recettes par véhicule existant), et le vérifier un an après sur `last12Months`.
+
 `lastLineStopDeparture` peut rester à 0 même quand la ligne fonctionne : ne pas s'en servir pour conclure à un blocage.
 
 Les diagnostics de l'analyseur sont des **indices heuristiques**, pas des verdicts. Pour chaque ligne déficitaire :

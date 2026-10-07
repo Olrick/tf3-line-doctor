@@ -13,7 +13,8 @@
 --   3. the game log (stdout.txt), between LINE_DOCTOR_BEGIN / LINE_DOCTOR_END markers
 -- The analyzer (analyzer/analyze.py) accepts any of the three.
 --
--- State saved with the game: { lastExport = <game time>, lastExportClock = <os.time() or nil> }
+-- State saved with the game: { lastExport = <game time>, lastExportClock = <os.time() or nil>, gameId,
+-- pending (line card), health (game bar), ... }
 
 local collector = ug_require "olrick_line_doctor_1::/line_doctor/collector.lua"
 local json = ug_require "olrick_line_doctor_1::/line_doctor/json.lua"
@@ -92,7 +93,7 @@ local function export(reason, ticketProbe, pendingIncome, gameId)
 	local ok, snapshot = pcall(collector.collect, api)
 	if not ok then
 		log("collect failed: " .. tostring(snapshot))
-		return false
+		return nil
 	end
 	snapshot.exportReason = reason
 	snapshot.gameId = gameId
@@ -110,7 +111,7 @@ local function export(reason, ticketProbe, pendingIncome, gameId)
 		log(string.format("file output unavailable (io=%s, app=%s), exported %d lines to the game log",
 			tostring(io ~= nil), tostring(app ~= nil), #snapshot.lines))
 	end
-	return true
+	return snapshot
 end
 
 function data()
@@ -192,7 +193,12 @@ function data()
 				pendingIncome = { error = "pending.lua not loaded: restart the game application" }
 			end
 			state:set(s)
-			export(reason, ticketProbe, pendingIncome, s.gameId)
+			local snapshot = export(reason, ticketProbe, pendingIncome, s.gameId)
+			if snapshot and snapshot.health then
+				snapshot.health.t = now
+				s.health = snapshot.health -- read by the GUI (game bar)
+				state:set(s)
+			end
 		end,
 
 		-- never returns a value: ticket prices are observed, not modified

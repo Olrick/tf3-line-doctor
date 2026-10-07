@@ -3,7 +3,8 @@
 -- Two plugins, registered by the .res.lua files next to this script:
 --   * LineDoctorLineCard : a "Line Doctor" card in every line window (LineEowExtensionPoint), built like the
 --     game's own line cards;
---   * LineDoctorCompass  : a compass in the bottom game bar, before "Earnings" (GameBarInfoDisplayExtension).
+--   * LineDoctorCompass  : a compass and the company health in the bottom game bar, before "Earnings"
+--     (GameBarInfoDisplayExtension).
 --     There is no visible extension point at the top of the screen: ModEntryPointExtension is mounted in an
 --     "internal-hidden" layer with class "invisible" (game.tl), for logic hooks only.
 --
@@ -40,6 +41,17 @@ local function readPending()
 		end
 	end)
 	return result
+end
+
+-- company health computed by the game script at each export (collector.health), nil before the first one
+local function readHealth()
+	local h
+	pcall(function()
+		local entity = api.engine.system.gameScriptSystem.getEntityForGameScript(GAME_SCRIPT)
+		local gs = api.engine.getComponent(entity, api.type.ComponentType.GAME_SCRIPT)
+		h = gs and gs.state and gs.state.health
+	end)
+	return h
 end
 
 local function money(v)
@@ -142,7 +154,52 @@ local function compassState()
 	return out
 end
 
+-- ---------------------------------------------------------------------------
+-- company health in the game bar: one dot per ratio, green / orange / red
+-- ---------------------------------------------------------------------------
+
+local LEVEL_CLASS = { vert = "positive", orange = "warning", rouge = "negative" }
+
+local function decimal(v, pct)
+	if v == nil then return "n/a" end
+	local text = pct and string.format("%.0f %%", v * 100) or string.format("%.2f", v)
+	return (text:gsub("%.", ","))
+end
+
+local function healthTooltip(h)
+	if h == nil then return "Santé Line Doctor : pas encore calculée (premier calcul au prochain export)." end
+	local out = {
+		string.format("Santé Line Doctor : calcul projeté au niveau max (rang %s, prix x %s au lieu de x %s aujourd'hui, rang %s).",
+			tostring(h.maxRank or 15), decimal(h.multiplierAtMaxRank), decimal(h.multiplier), tostring(h.rank or "?")),
+		string.format("Sur les %d derniers mois terminés, hors subventions%s.", h.periods or 0,
+			dateText(h.t) and (", calculé le " .. dateText(h.t)) or ""),
+	}
+	for _, r in ipairs(h.ratios or {}) do
+		local cmpGood, cmpBad = r.higher and ">=" or "<=", r.higher and "<" or ">"
+		out[#out + 1] = string.format("[%s] %s : %s (vert %s %s, rouge %s %s)", r.level or "gris", r.name,
+			decimal(r.value, r.pct), cmpGood, decimal(r.good, r.pct), cmpBad, decimal(r.bad, r.pct))
+	end
+	return table.concat(out, "\n")
+end
+
+local function healthView(h)
+	local children = { builtin.TextView{ meta = { class = "font-scale-headline" }, text = "Santé" } }
+	for _, r in ipairs((h and h.ratios) or {}) do
+		children[#children + 1] = builtin.TextView{
+			meta = { class = "font-scale-headline" .. (LEVEL_CLASS[r.level] and (" " .. LEVEL_CLASS[r.level]) or "") },
+			text = "•",
+		}
+	end
+	if h == nil then children[#children + 1] = builtin.TextView{ meta = { class = "font-scale-body" }, text = "…" } end
+	return builtin.Component {
+		meta = { tooltip = healthTooltip(h) },
+		layout = builtin.BoxLayout{ orientation = builtin.type.Orientation.Horizontal, children = children },
+	}
+end
+
 local LineDoctorCompass = react.RegisterPluginRecipe(game_bar_widgets.GameBarInfoDisplayExtension, "LineDoctorCompass", function()
+	-- the health is simulation state: read it in useStepStateTimer, like the line card
+	local health = engine_react_util.useStepStateTimer(function() return { h = readHealth() } end, 5.0)
 	-- The camera is GUI api: reading it inside useStepStateTimer fails with "api currently restricted" (that
 	-- hook reads the simulation). react.onStep runs in the GUI update, like the game's own buttons.
 	local state = react.useState({ heading = nil, raw = nil, err = nil })
@@ -175,6 +232,7 @@ local LineDoctorCompass = react.RegisterPluginRecipe(game_bar_widgets.GameBarInf
 					},
 				},
 			},
+			healthView(health:old().h),
 		},
 	}
 end)
