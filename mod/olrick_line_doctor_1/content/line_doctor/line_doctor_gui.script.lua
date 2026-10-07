@@ -186,7 +186,8 @@ local function healthView(h)
 	local children = { builtin.TextView{ meta = { class = "font-scale-headline" }, text = "Santé" } }
 	for _, r in ipairs((h and h.ratios) or {}) do
 		children[#children + 1] = builtin.TextView{
-			meta = { class = "font-scale-headline" .. (LEVEL_CLASS[r.level] and (" " .. LEVEL_CLASS[r.level]) or "") },
+			-- classes are comma-separated, like the game's earnings widget ("font-scale-headline, positive")
+			meta = { class = "font-scale-headline" .. (LEVEL_CLASS[r.level] and (", " .. LEVEL_CLASS[r.level]) or "") },
 			text = "•",
 		}
 	end
