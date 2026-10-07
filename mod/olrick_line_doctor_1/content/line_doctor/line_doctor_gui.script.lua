@@ -158,6 +158,9 @@ end
 -- company health in the game bar: one dot per ratio, green / orange / red
 -- ---------------------------------------------------------------------------
 
+-- no-break space (UTF-8 bytes): plain spaces at the edge of a TextView may be trimmed
+local NBSP = "\194\160"
+
 local LEVEL_CLASS = { vert = "positive", orange = "warning", rouge = "negative" }
 
 local function decimal(v, pct)
@@ -183,7 +186,7 @@ local function healthTooltip(h)
 end
 
 local function healthView(h)
-	local children = { builtin.TextView{ meta = { class = "font-scale-headline" }, text = "Santé" } }
+	local children = { builtin.TextView{ meta = { class = "font-scale-headline" }, text = "Santé" .. NBSP } }
 	for _, r in ipairs((h and h.ratios) or {}) do
 		children[#children + 1] = builtin.TextView{
 			-- classes are comma-separated, like the game's earnings widget ("font-scale-headline, positive")
@@ -227,12 +230,13 @@ local LineDoctorCompass = react.RegisterPluginRecipe(game_bar_widgets.GameBarInf
 					orientation = builtin.type.Orientation.Horizontal,
 					children = {
 						builtin.TextView{ meta = { class = "font-scale-headline" }, text = "Cap" },
-						builtin.TextView{ meta = { class = "font-scale-headline" }, text = label },
+						builtin.TextView{ meta = { class = "font-scale-headline" }, text = NBSP .. label },
 						builtin.TextView{ meta = { class = "font-scale-body" },
 							text = s.heading and string.format("%d°", math.floor(s.heading + 0.5)) or "" },
 					},
 				},
 			},
+			builtin.TextView{ meta = { class = "font-scale-headline" }, text = NBSP:rep(4) }, -- gap compass / health
 			healthView(health:old().h),
 		},
 	}
