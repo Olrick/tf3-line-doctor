@@ -3,3 +3,6 @@ __pycache__/
 out/
 *.log
 exports/
+
+# personal notes, not published
+économies.md
