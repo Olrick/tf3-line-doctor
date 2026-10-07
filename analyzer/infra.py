@@ -80,7 +80,18 @@ def build(snapshot: dict) -> dict:
             "linesIncome": sum(f.get("income") or 0 for f in fin),
             "transported": sum(analyze._num(l.get("transportedPerYear")) for l in served),
             "depots": b.get("depots") or 0, "costKnown": bool(b.get("cost")), "parts": b.get("costParts"),
+            "pos": b.get("pos"),
         })
+
+    # where to find a building without line: the nearest served building, distance and height difference
+    served_pos = [b for b in buildings if b["lines"] and b.get("pos")]
+    for b in buildings:
+        if b["lines"] or not b.get("pos") or not served_pos:
+            continue
+        near = min(served_pos, key=lambda o: (o["pos"][0] - b["pos"][0]) ** 2 + (o["pos"][1] - b["pos"][1]) ** 2)
+        dx, dy = near["pos"][0] - b["pos"][0], near["pos"][1] - b["pos"][1]
+        b["nearest"] = {"name": near["name"], "distance": (dx * dx + dy * dy) ** 0.5,
+                        "dz": b["pos"][2] - near["pos"][2]}
 
     kinds: dict[str, dict] = {}
     for b in buildings:
@@ -121,7 +132,12 @@ def render(r: dict) -> str:
             flag = "<span class='tag neg'>lignes déficitaires</span>"
         if ratio is not None and ratio > 0.5:
             flag += " <span class='tag neg'>coûte &gt; 50 % des recettes de ses lignes</span>"
-        return (f"<tr><td><b>{html.escape(b['name'])}</b><div class='muted'>{html.escape(b['kind'])}</div></td>"
+        where = ""
+        if b.get("nearest"):
+            n = b["nearest"]
+            level = (" , %.0f m plus bas" % -n["dz"]) if n["dz"] < -3 else (" , %.0f m plus haut" % n["dz"]) if n["dz"] > 3 else ""
+            where = f"<div class='muted'>à {n['distance']:.0f} m de {html.escape(n['name'])}{level}</div>"
+        return (f"<tr><td><b>{html.escape(b['name'])}</b><div class='muted'>{html.escape(b['kind'])}</div>{where}</td>"
                 f"<td class='r neg'>{_m(b['cost'])}</td>"
                 f"<td>{html.escape(', '.join(b['lines']) or '—')} {flag}</td>"
                 f"<td class='r'>{_m(b['transported'])}</td><td class='r'>{_m(b['linesIncome'])}</td>"

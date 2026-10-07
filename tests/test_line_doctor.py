@@ -318,6 +318,10 @@ class LuaModTest(unittest.TestCase):
         self.assertAlmostEqual(report["financeUpkeep"], 25000)
         self.assertEqual(sum(b["cost"] for b in report["buildings"]), 80000)  # mock: component costs only
         self.assertEqual(report["kinds"]["gare de marchandises (route)"]["unused"], 1)
+        unused = next(b for b in report["buildings"] if not b["lines"])
+        self.assertEqual(unused["nearest"]["name"], "Gare")             # the served bus station
+        self.assertAlmostEqual(unused["nearest"]["distance"], 50)       # 30 / 40 / 50 m
+        self.assertAlmostEqual(unused["nearest"]["dz"], -8)             # 8 m lower: underground level
         self.assertIn("sans aucune ligne", infra_mod.render(report))
 
     def test_archive_keeps_one_file_per_export_per_game(self):

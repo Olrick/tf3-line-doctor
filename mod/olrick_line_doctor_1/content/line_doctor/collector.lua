@@ -456,6 +456,10 @@ local function collectInfrastructure(api, player)
 				end
 			end
 			b.depots = #list(con.depots)
+			b.pos = try("building position", function()
+				local t = con.transf
+				return t and { num(t[13]), num(t[14]), num(t[15]) } or nil
+			end)
 			-- every place the engine may keep the cost: the building, its stations, depots and modules
 			local function mcOf(entity)
 				local v = 0

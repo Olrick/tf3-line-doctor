@@ -88,8 +88,10 @@ for id in pairs(vehicles) do names[id] = "Vehicle " .. id end
 local constructions = {
 	[77] = { transf = { 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 1500, 2000, 10, 1 } },
 	-- a bus station used by line 100 and an unused truck station
-	[601] = { fileName = "station/street/bus_station.con", stations = { 701 }, depots = {} },
-	[602] = { fileName = "station/street/truck_station.con", stations = { 702 }, depots = {} },
+	[601] = { fileName = "station/street/bus_station.con", stations = { 701 }, depots = {},
+		transf = { 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 100, 100, 10, 1 } },
+	[602] = { fileName = "station/street/truck_station.con", stations = { 702 }, depots = {},
+		transf = { 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 130, 140, 2, 1 } },
 }
 local maintenance = { [601] = 30000, [602] = 50000, [801] = 2000, [802] = 3000 } -- 801 street, 802 track
 local stationGroupOf = { [701] = 1001, [702] = 2999 }
