@@ -48,6 +48,17 @@ def _finance_row(snapshot: dict, needle: str) -> float:
     return -sum(per) / len(per)
 
 
+DIRECTIONS = ["nord", "nord-est", "est", "sud-est", "sud", "sud-ouest", "ouest", "nord-ouest"]
+
+
+def direction(frm, to) -> str:
+    """Compass direction from `frm` to `to`: north = map +y, clockwise towards +x. Same convention as the
+    in-game Line Doctor compass, checked in game on 2026-10-07 with two landmark pairs (65° and 127°)."""
+    import math
+    ang = (math.degrees(math.atan2(to[0] - frm[0], to[1] - frm[1])) + 360) % 360
+    return DIRECTIONS[int((ang + 22.5) // 45) % 8]
+
+
 def build(snapshot: dict) -> dict:
     infra = snapshot.get("infrastructure")
     if not infra:
@@ -91,7 +102,7 @@ def build(snapshot: dict) -> dict:
         near = min(served_pos, key=lambda o: (o["pos"][0] - b["pos"][0]) ** 2 + (o["pos"][1] - b["pos"][1]) ** 2)
         dx, dy = near["pos"][0] - b["pos"][0], near["pos"][1] - b["pos"][1]
         b["nearest"] = {"name": near["name"], "distance": (dx * dx + dy * dy) ** 0.5,
-                        "dz": b["pos"][2] - near["pos"][2]}
+                        "dz": b["pos"][2] - near["pos"][2], "direction": direction(near["pos"], b["pos"])}
         # landmarks: the two closest buildings of any kind (orientation-free description, the map has no compass)
         others = sorted((o for o in buildings if o is not b and o.get("pos")),
                         key=lambda o: (o["pos"][0] - b["pos"][0]) ** 2 + (o["pos"][1] - b["pos"][1]) ** 2)[:2]
@@ -141,7 +152,8 @@ def render(r: dict) -> str:
         if b.get("nearest"):
             n = b["nearest"]
             level = (" , %.0f m plus bas" % -n["dz"]) if n["dz"] < -3 else (" , %.0f m plus haut" % n["dz"]) if n["dz"] > 3 else ""
-            where = f"<div class='muted'>gare desservie la plus proche : {html.escape(n['name'])}, {n['distance']:.0f} m{level}</div>"
+            where = (f"<div class='muted'>à {n['distance']:.0f} m au {n['direction']} de {html.escape(n['name'])}"
+                     f" (gare desservie la plus proche){level}</div>")
             if len(b.get("landmarks") or []) == 2:
                 l1, l2 = b["landmarks"]
                 where += (f"<div class='muted'>repères : entre {html.escape(l1['name'])} ({l1['distance']:.0f} m) "
