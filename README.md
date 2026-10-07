@@ -14,7 +14,7 @@ Line Doctor comes in **two parts**:
 ```
  Transport Fever 3 (the mod)                       Claude Code (this repository)
 ┌───────────────────────────────────┐          ┌──────────────────────────────────────┐
-│ bottom bar: Cap · Santé ● ● ● ●   │          │ analyzer/*.py   → metrics, reports    │
+│ bottom bar: Heading · Health ●●●● │          │ analyzer/*.py   → metrics, reports    │
 │ line window: card                 │  export  │ skill analyze-lines → explanations    │
 │ game script (read-only) ──────────┼────────▶ │                       and fixes       │
 │   export on load + once a month   │stdout.txt│ exports/<game>/ → history            │
@@ -24,7 +24,8 @@ Line Doctor comes in **two parts**:
 The mod is **read-only**: it sends no command to the game, changes no price and writes nothing to the
 accounts. It is flagged `cosmetic` so it does not block achievements.
 
-> **Language:** the in-game labels (`Cap`, `Santé`, tooltips) and Claude's answers are currently in French.
+> **Language:** the in-game texts follow the game language (English or French; other languages fall back to
+> English). Claude answers in the language you write in. The HTML reports of the analyzers are in French.
 
 ---
 
@@ -32,7 +33,7 @@ accounts. It is flagged `cosmetic` so it does not block achievements.
 
 ### The compass
 
-In the bottom bar, left of the earnings: **`Cap NE 45°`**.
+In the bottom bar, left of the earnings: **`Heading NE 45°`**.
 
 - It shows where the camera is looking: N, NE, E, SE, S, SW, W, NW and the heading in degrees.
 - TF3 has no official north: here **north is the map's +y axis**, headings go clockwise. Claude's reports use
@@ -42,7 +43,7 @@ In the bottom bar, left of the earnings: **`Cap NE 45°`**.
 
 ### Company health
 
-Next to the compass: **`Santé ● ● ● ●`** (health), one dot per indicator, **green**, **orange** or **red**.
+Next to the compass: **`Health ● ● ● ●`**, one dot per indicator, **green**, **orange** or **red**.
 Hover over it for the details (values and thresholds).
 
 **What health measures.** Four ratios that tell whether the company is structurally profitable, beyond this
@@ -68,7 +69,7 @@ income × (multiplier at rank 15 ÷ current multiplier), costs unchanged. As a r
 - with inflation turned off (game option), the projection changes nothing.
 
 The calculation covers the **last 12 complete months** of the game's finance table, **excluding subsidies**
-(one-off). It is refreshed at every monthly export; before the first one, the indicator shows "Santé …".
+(one-off). It is refreshed at every monthly export; before the first one, the indicator shows "Health …".
 
 ### The Line Doctor card in the line window
 

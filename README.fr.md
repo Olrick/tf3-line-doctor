@@ -21,6 +21,9 @@ Line Doctor est en **deux parties** :
 └───────────────────────────────────┘          └──────────────────────────────────────┘
 ```
 
+Les textes du mod suivent la langue du jeu (français ou anglais ; les autres langues s'affichent en
+anglais). Claude répond dans la langue de la question.
+
 Le mod est **en lecture seule** : il n'envoie aucune commande au jeu, ne modifie aucun prix et n'écrit rien
 dans la comptabilité. Il est marqué `cosmetic` pour ne pas bloquer les succès.
 

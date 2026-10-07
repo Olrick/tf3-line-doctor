@@ -94,7 +94,7 @@ Les diagnostics de l'analyseur sont des **indices heuristiques**, pas des verdic
    très rentable peut valoir la peine), année/époque du jeu.
 4. Quantifier quand c'est possible (nombre de véhicules cible, économie annuelle estimée = coûts par véhicule × véhicules retirés).
 
-## 3. Répondre (en français)
+## 3. Répondre (dans la langue de l'utilisateur : français ou anglais)
 
 - Résumé en 3–5 lignes : nombre de lignes, déficitaires, perte totale, priorité n°1.
 - Puis, ligne par ligne, des plus déficitaires aux moins : **Cause probable**, **Indices** (chiffres), **Actions** (concrètes,

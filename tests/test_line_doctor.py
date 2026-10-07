@@ -5,6 +5,7 @@
 """
 
 import json
+import re
 import sys
 import tempfile
 import unittest
@@ -73,6 +74,23 @@ class LuaModTest(unittest.TestCase):
             ok, err = self.lua.eval("function(src, name) local fn, e = load(src, name) return fn ~= nil, e end")(
                 f.read_text(encoding="utf-8"), f.name)
             self.assertTrue(ok, f"{f.name}: {err}")
+
+    def test_gui_texts_are_translated(self):
+        # every text passed to tr() in the GUI exists in strings.json, in English and French, with the same
+        # format specifiers (a missing %s would crash string.format in game)
+        strings = json.loads((MOD.parents[1] / "strings.json").read_text(encoding="utf-8"))
+        gui = (MOD / "line_doctor_gui.script.lua").read_text(encoding="utf-8")
+        keys = set(re.findall(r'tr\("([^"]*)"\)', gui))
+        for table in ("LEVEL_NAME", "RATIO_NAME"):
+            body = re.search(table + r" = \{(.*?)\n?\}", gui, re.S).group(1)
+            keys |= set(re.findall(r'= "([^"]*)"', body))
+        self.assertGreater(len(keys), 20)
+        self.assertEqual(set(strings["en"]), set(strings["fr"]))
+        for k in keys:
+            for lang in ("en", "fr"):
+                self.assertIn(k, strings[lang], f"{lang}: {k}")
+                self.assertEqual(re.findall(r"%[-0-9.]*[a-z%]", k), re.findall(r"%[-0-9.]*[a-z%]", strings[lang][k]),
+                                 f"{lang}: {k}")
 
     def test_content_list_matches_files(self):
         listed = set(json.loads((MOD.parent.parent / "_content.json").read_text())["files"])

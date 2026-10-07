@@ -24,6 +24,17 @@ local game_bar_widgets = ug_require "::/gui/game_bar/game_bar_widgets.tl"
 
 local GAME_SCRIPT = "olrick_line_doctor_1::/line_doctor/line_doctor.gs"
 
+-- Translation: in the game `_` looks the text up in the mod's strings.json for the game language (the English
+-- text is the key, so a missing translation shows English). Called at display time, from a file-level
+-- function so that loop variables named `_` never shadow it.
+local function tr(text)
+	if type(_) == "function" then
+		local ok, translated = pcall(_, text)
+		if ok and type(translated) == "string" and translated ~= "" then return translated end
+	end
+	return text
+end
+
 -- ---------------------------------------------------------------------------
 -- data
 -- ---------------------------------------------------------------------------
@@ -78,7 +89,7 @@ end
 local function row(label, value, class)
 	return builtin.BoxLayout{
 		orientation = builtin.type.Orientation.Horizontal,
-		children = { text(label .. " : "), text(value, class) },
+		children = { text(label .. tr(": ")), text(value, class) },
 	}
 end
 
@@ -96,11 +107,12 @@ local LineDoctorCardContent = react.RegisterRecipe("LineDoctorCardContent", func
 	return builtin.BoxLayout{
 		orientation = builtin.type.Orientation.Vertical,
 		children = {
-			row("Profit en attente (segments terminés)", money(s.done), "positive"),
-			row("Profit en cours (segment en route)", money(s.inProgress)),
-			row("Marchandises en route après cette ligne", tostring(s.units)),
-			text("Versé à la livraison au client final. " .. (dateText(s.t) and ("Calculé le " .. dateText(s.t) .. ".")
-				or "Pas encore calculé : premier calcul au prochain mois de jeu.")),
+			row(tr("Pending profit (completed legs)"), money(s.done), "positive"),
+			row(tr("Profit in progress (leg on its way)"), money(s.inProgress)),
+			row(tr("Cargo on its way after this line"), tostring(s.units)),
+			text(tr("Paid on delivery to the final customer.") .. " " .. (dateText(s.t)
+				and string.format(tr("Computed on %s."), dateText(s.t))
+				or tr("Not computed yet: first computation at the next game month."))),
 		},
 	}
 end)
@@ -132,9 +144,9 @@ local DIRECTIONS = { "N", "NE", "E", "SE", "S", "SW", "W", "NW" }
 local function compassState()
 	local out = { heading = nil, raw = nil, err = nil }
 	local ok, err = pcall(function()
-		if api.gui == nil or api.gui.camera == nil then error("api.gui.camera indisponible ici") end
+		if api.gui == nil or api.gui.camera == nil then error("api.gui.camera unavailable here") end
 		local cam = api.gui.camera.getCameraData()
-		if cam == nil then error("getCameraData() renvoie nil") end
+		if cam == nil then error("getCameraData() returned nil") end
 		-- Vec5f {x, y, distance, angle, pitch}: the game's tutorial reads the angle as `.w`
 		local angle
 		for _, read in ipairs({
@@ -145,7 +157,7 @@ local function compassState()
 				if okRead and type(v) == "number" then angle = v end
 			end
 		end
-		if angle == nil then error("angle introuvable dans " .. tostring(cam)) end
+		if angle == nil then error("no angle in " .. tostring(cam)) end
 		local raw = math.deg(angle)
 		out.raw = raw
 		out.heading = (COMPASS_OFFSET_DEG + COMPASS_SIGN * raw) % 360
@@ -164,31 +176,42 @@ local NBSP = "\194\160"
 -- global classes of gui/main/default.css: success = Ok (green), warning = goldenrod, error = red
 -- ("positive" is the game's blue)
 local LEVEL_CLASS = { vert = "success", orange = "warning", rouge = "error" }
+-- levels and ratio keys come from collector.health (French level names in the saved state)
+local LEVEL_NAME = { vert = "green", orange = "orange", rouge = "red", gris = "grey" }
+local RATIO_NAME = {
+	running = "Income / vehicle running costs",
+	buildings = "Building upkeep / income",
+	vmaint = "Vehicle maintenance / income",
+	margin = "Operating result / income",
+}
 
 local function decimal(v, pct)
 	if v == nil then return "n/a" end
-	local text = pct and string.format("%.0f %%", v * 100) or string.format("%.2f", v)
-	return (text:gsub("%.", ","))
+	local text = pct and string.format("%.0f%%", v * 100) or string.format("%.2f", v)
+	local sep = tr("DECIMAL_SEPARATOR")
+	if sep == "DECIMAL_SEPARATOR" then sep = "." end
+	return (text:gsub("%.", sep))
 end
 
 local function healthTooltip(h)
-	if h == nil then return "Santé Line Doctor : pas encore calculée (premier calcul au prochain export)." end
+	if h == nil then return tr("Line Doctor health: not computed yet (first computation at the next export).") end
 	local out = {
-		string.format("Santé Line Doctor : calcul projeté au niveau max (rang %s, prix x %s au lieu de x %s aujourd'hui, rang %s).",
+		string.format(tr("Line Doctor health: projected at the max rank (rank %s: prices x %s instead of x %s today, at rank %s)."),
 			tostring(h.maxRank or 15), decimal(h.multiplierAtMaxRank), decimal(h.multiplier), tostring(h.rank or "?")),
-		string.format("Sur les %d derniers mois terminés, hors subventions%s.", h.periods or 0,
-			dateText(h.t) and (", calculé le " .. dateText(h.t)) or ""),
+		string.format(tr("Over the last %d complete months, subsidies excluded."), h.periods or 0)
+			.. (dateText(h.t) and (" " .. string.format(tr("Computed on %s."), dateText(h.t))) or ""),
 	}
 	for _, r in ipairs(h.ratios or {}) do
 		local cmpGood, cmpBad = r.higher and ">=" or "<=", r.higher and "<" or ">"
-		out[#out + 1] = string.format("[%s] %s : %s (vert %s %s, rouge %s %s)", r.level or "gris", r.name,
-			decimal(r.value, r.pct), cmpGood, decimal(r.good, r.pct), cmpBad, decimal(r.bad, r.pct))
+		out[#out + 1] = string.format(tr("[%s] %s: %s (green %s %s, red %s %s)"), tr(LEVEL_NAME[r.level] or "grey"),
+			tr(RATIO_NAME[r.key] or r.name or "?"), decimal(r.value, r.pct), cmpGood, decimal(r.good, r.pct), cmpBad,
+			decimal(r.bad, r.pct))
 	end
 	return table.concat(out, "\n")
 end
 
 local function healthView(h)
-	local children = { builtin.TextView{ meta = { class = "font-scale-headline" }, text = "Santé" .. NBSP } }
+	local children = { builtin.TextView{ meta = { class = "font-scale-headline" }, text = tr("Health") .. NBSP } }
 	for _, r in ipairs((h and h.ratios) or {}) do
 		children[#children + 1] = builtin.TextView{
 			-- classes are comma-separated, like the game's earnings widget ("font-scale-headline, positive")
@@ -217,10 +240,10 @@ local LineDoctorCompass = react.RegisterPluginRecipe(game_bar_widgets.GameBarInf
 		if changed then state:set(new) end
 	end)
 	local s = state:old()
-	local label, tip = "?", "Boussole Line Doctor : " .. tostring(s.err or "orientation indisponible")
+	local label, tip = "?", tr("Line Doctor compass: ") .. tostring(s.err or tr("orientation unavailable"))
 	if s.heading then
 		label = DIRECTIONS[math.floor((s.heading + 22.5) / 45) % 8 + 1]
-		tip = string.format("Boussole Line Doctor : cap %d° (angle brut de la caméra %.0f°). N = axe y de la carte.",
+		tip = string.format(tr("Line Doctor compass: heading %d° (raw camera angle %.0f°). N = map y axis."),
 			math.floor(s.heading + 0.5), s.raw)
 	end
 	return builtin.BoxLayout{
@@ -231,7 +254,7 @@ local LineDoctorCompass = react.RegisterPluginRecipe(game_bar_widgets.GameBarInf
 				layout = builtin.BoxLayout{
 					orientation = builtin.type.Orientation.Horizontal,
 					children = {
-						builtin.TextView{ meta = { class = "font-scale-headline" }, text = "Cap" },
+						builtin.TextView{ meta = { class = "font-scale-headline" }, text = tr("Heading") },
 						builtin.TextView{ meta = { class = "font-scale-headline" }, text = NBSP .. label },
 						builtin.TextView{ meta = { class = "font-scale-body" },
 							text = s.heading and string.format("%d°", math.floor(s.heading + 0.5)) or "" },
