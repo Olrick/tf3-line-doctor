@@ -226,7 +226,7 @@ class LuaModTest(unittest.TestCase):
         seg1 = 500.0
         seg2 = math.sqrt(600**2 + 800**2 + 10**2) + 80          # climb of 10 m counts 8x
         rest = 1000.0
-        price = 3.9 * (math.sqrt(1500**2 + 2000**2 + 10**2) + 80) * 0.804
+        price = 3.9 * (math.sqrt(1500**2 + 2000**2 + 10**2) + 80) * 1.0  # no inflation
         total = seg1 + seg2 + rest
         self.assertEqual(res["items"], 1)
         self.assertAlmostEqual(res["lines"]["100"]["done"], price * seg1 / total, delta=0.01)  # json keeps 6 digits

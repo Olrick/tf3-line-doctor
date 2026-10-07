@@ -15,7 +15,7 @@
 local M = {}
 
 M.DEFAULT_FACTOR = 3.9  -- price per metre when a cargo type was never delivered yet (measured 3.3-5.0)
-M.DEFAULT_K = 0.804     -- booked income / computed price (measured)
+M.DEFAULT_K = 1.0       -- booked income / computed price when the game's multiplier cannot be read
 M.EMA = 0.1             -- weight of a new measurement
 M.MAX_CHAINS = 400      -- distinct delivered chains remembered (cargo type + sequence of lines)
 M.MAX_PREFIXES = 600    -- distinct partial chains reported per computation
@@ -303,12 +303,26 @@ function M.gatherSims(api)
 	return list
 end
 
+--- The company's ticket price multiplier (the "inflation" of TF3: 1 - (rank - 1) x (1 - floor) / 14), as
+--- stored by the game's company progression script; nil multiplier = no reduction. Measured 0.804 at rank ~12
+--- with "Normal" inflation, 1.00 once inflation was set to "None" (2026-10-07).
+function M.priceMultiplier(api)
+	local k
+	pcall(function()
+		local e = api.engine.system.gameScriptSystem.getEntityForGameScript("::game_mechanics/company/company_progression.gs")
+		local gs = api.engine.getComponent(e, api.type.ComponentType.GAME_SCRIPT)
+		local data = gs.state.companyState[api.engine.util.getPlayer()]
+		k = num(data and data.ticketPriceMultiplier) or 1.0
+	end)
+	return k
+end
+
 --- Estimates the pending income of every line.
 -- @return { t, lines = { [lineId] = { done, inProgress, units } }, items, skipped, factorsUsed }
 function M.compute(api, s, now)
 	local C = api.type.ComponentType
 	local c = calib(s)
-	local k = c.k.v
+	local k = M.priceMultiplier(api) or c.k.v
 	local cache = {}
 	local lines = {}
 	local prefixes, prefixCount = {}, 0
