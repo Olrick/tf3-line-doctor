@@ -3,8 +3,9 @@
 -- Two plugins, registered by the .res.lua files next to this script:
 --   * LineDoctorLineCard : a "Line Doctor" card in every line window (LineEowExtensionPoint), built like the
 --     game's own line cards;
---   * LineDoctorCompass  : a compass at the top left of the screen (ModEntryPointExtension: root UI nodes,
---     placed top-left by the game; styled by line_doctor.css.lua so it stays readable over the 3D view).
+--   * LineDoctorCompass  : a compass in the bottom game bar, before "Earnings" (GameBarInfoDisplayExtension).
+--     There is no visible extension point at the top of the screen: ModEntryPointExtension is mounted in an
+--     "internal-hidden" layer with class "invisible" (game.tl), for logic hooks only.
 --
 -- No mod button/window: plugin recipes must return a layout, and game windows are opened through the
 -- window container of gameCtx, which the mod button area does not provide (crash "Recipe child must be a
@@ -18,7 +19,7 @@ local builtin = ug_require "::/gui/main/builtin.lua"
 local content_card = ug_require "::/gui/main/content_card.tl"
 local engine_react_util = ug_require "::/gui/main/engine_react_util.tl"
 local line_eow = ug_require "::/gui/entity_window/line/line_eow.script.tl"
-local mod_entry_point = ug_require "::/gui/main/mod_entry_point.tl"
+local game_bar_widgets = ug_require "::/gui/game_bar/game_bar_widgets.tl"
 
 local GAME_SCRIPT = "olrick_line_doctor_1::/line_doctor/line_doctor.gs"
 
@@ -141,7 +142,7 @@ local function compassState()
 	return out
 end
 
-local LineDoctorCompass = react.RegisterPluginRecipe(mod_entry_point.ModEntryPointExtension, "LineDoctorCompass", function()
+local LineDoctorCompass = react.RegisterPluginRecipe(game_bar_widgets.GameBarInfoDisplayExtension, "LineDoctorCompass", function()
 	local state = engine_react_util.useStepStateTimer(compassState, 0.1)
 	local s = state:old()
 	local label, tip = "?", "Boussole Line Doctor : " .. tostring(s.err or "orientation indisponible")
@@ -154,7 +155,7 @@ local LineDoctorCompass = react.RegisterPluginRecipe(mod_entry_point.ModEntryPoi
 		orientation = builtin.type.Orientation.Horizontal,
 		children = {
 			builtin.Component {
-				meta = { tooltip = tip, class = "line-doctor-compass" },
+				meta = { tooltip = tip },
 				layout = builtin.BoxLayout{
 					orientation = builtin.type.Orientation.Horizontal,
 					children = {
