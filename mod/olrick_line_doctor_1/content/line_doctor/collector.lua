@@ -503,6 +503,82 @@ local function collectInfrastructure(api, player)
 end
 
 -- ---------------------------------------------------------------------------
+-- stocks: warehouses and industries (cargo waiting, flows per year, cargo thrown away)
+-- ---------------------------------------------------------------------------
+
+-- Stock list holders are found three ways, the first may be refused by the engine like SIM_CARGO:
+-- entities with a STOCK_LIST component, stocks with cargo waiting, stock lists that threw cargo away.
+local function collectStocks(api)
+	local C = api.type.ComponentType
+	local sys, util = api.engine.system, api.engine.util
+	local seen, order = {}, {}
+	local function add(e)
+		e = num(e)
+		if e and not seen[e] then seen[e] = true; order[#order + 1] = e end
+	end
+	pcall(function()
+		for _, e in ipairs(list(api.engine.getEntitiesWithComponent(C.STOCK_LIST))) do add(e) end
+	end)
+	pcall(function()
+		for key in pairs(sys.simEntityAtStockSystem.getStock2SimEntityMap()) do add(key[1]) end
+	end)
+	local thrown = {}
+	pcall(function()
+		for e, n in pairs(util.stock.getStockListsWithThrownAwayCargo()) do add(e); thrown[num(e)] = num(n) end
+	end)
+
+	local storageType = try("StockListType enum", function() return api.type.StockListType.StorageStock end)
+	local out = {}
+	for _, e in ipairs(order) do
+		pcall(function()
+			local sl = api.engine.getComponent(e, C.STOCK_LIST)
+			if not sl then return end
+			local s = { id = e, name = try("stock name", util.getEntityName, e), stocks = {}, cargo = {},
+				thrownAway = thrown[e] }
+			local con = api.engine.getComponent(e, C.CONSTRUCTION)
+			if not con then
+				local ce = try("construction of industry", sys.streetConnectorSystem.getConstructionEntityForIndustry, e)
+				if ce and ce >= 0 then con = api.engine.getComponent(ce, C.CONSTRUCTION) end
+			end
+			if con then
+				s.file = tostring(con.fileName)
+				s.pos = try("stock position", function()
+					local t = con.transf
+					return t and { num(t[13]), num(t[14]), num(t[15]) } or nil
+				end)
+			end
+			local cargoTypes = {}
+			for i, st in ipairs(list(sl.stocks)) do
+				local id = i - 1 -- StockId: index in the list, 0-based like the engine's other ids
+				local entry = { stockId = id, type = enumName(api.type.StockListType, st.type), cargoType = num(st.cargoType),
+					capacity = num(st.capacity), count = try("getStockCount", sys.simEntityAtStockSystem.getStockCount, e, id) }
+				if storageType ~= nil and st.type == storageType then s.warehouse = true end
+				if entry.cargoType and entry.cargoType >= 0 then cargoTypes[entry.cargoType] = true end
+				s.stocks[#s.stocks + 1] = entry
+			end
+			pcall(function()
+				local inOut = util.stock.getInputsOutputsFromRules(e)
+				for _, part in ipairs({ inOut[1], inOut[2] }) do
+					for _, ct in ipairs(list(part)) do cargoTypes[num(ct)] = true end
+				end
+			end)
+			for ct in pairs(cargoTypes) do
+				s.cargo[tostring(ct)] = {
+					shipped = try("shipped per year", util.stock.getCargoTypeShippedPerYear, e, ct),
+					delivered = try("delivered per year", util.stock.getCargoTypeDeliveredPerYear, e, ct),
+					produced = try("produced per year", util.stock.getCargoProducedPerYear, e, ct),
+					consumed = try("consumed per year", util.stock.getCargoConsumedPerYear, e, ct),
+					maxProduction = try("max production per year", util.stock.getCargoMaxProductionPerYear, e, ct),
+				}
+			end
+			if s.file and s.file:lower():find("warehouse") then s.warehouse = true end
+			out[#out + 1] = s
+		end)
+	end
+	return out
+end
+
+-- ---------------------------------------------------------------------------
 -- health check, shown in the game bar (same thresholds as analyzer/health.py)
 -- ---------------------------------------------------------------------------
 
@@ -645,6 +721,7 @@ function M.collect(api)
 	snapshot.financeLast12Months = player and try("finance last 12 months", collectFinanceTable, api, player, 13, monthTicks)
 	snapshot.health = try("health", M.health, snapshot.financeLast12Months, snapshot.company)
 	snapshot.infrastructure = player and try("infrastructure", collectInfrastructure, api, player)
+	snapshot.stocks = try("stocks", collectStocks, api)
 
 	local stateEnum = try("TransportVehicleState enum", function() return api.type.enum.TransportVehicleState end)
 	local lineSystem = api.engine.system.lineSystem

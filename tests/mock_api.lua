@@ -8,7 +8,7 @@ local YEAR = 1461000 -- value observed in game
 local NUM_CARGO_TYPES = 37
 local NOW = 5 * YEAR
 
-local C = { LINE = 1, GAME_TIME = 2, TRANSPORT_VEHICLE = 3, ACCOUNT = 4, SIM_CARGO = 5, SIM_ENTITY_AT_VEHICLE = 6, CONSTRUCTION = 7, SIM_ENTITY_AT_TERMINAL = 8, MAINTENANCE_COST = 9, BASE_EDGE = 10, BASE_EDGE_STREET = 11, GAME_SCRIPT = 12 }
+local C = { LINE = 1, GAME_TIME = 2, TRANSPORT_VEHICLE = 3, ACCOUNT = 4, SIM_CARGO = 5, SIM_ENTITY_AT_VEHICLE = 6, CONSTRUCTION = 7, SIM_ENTITY_AT_TERMINAL = 8, MAINTENANCE_COST = 9, BASE_EDGE = 10, BASE_EDGE_STREET = 11, GAME_SCRIPT = 12, STOCK_LIST = 13 }
 
 -- a coal unit delivered by line 200 after a first leg on line 100 (sim 9002)
 local simCargo = {
@@ -140,6 +140,7 @@ end
 return {
 	type = {
 		ComponentType = C,
+		StockListType = { InputStock = 0, OutputStock = 1, StorageStock = 2 },
 		JournalEntry = { Maintenance = MAINT, Type = JE_TYPE, Construction = JE_CONSTRUCTION, Carrier = JE_CARRIER, Other = {} },
 		ChartConfig = { new = function() return {} end },
 		enum = { TransportVehicleState = STATE },
@@ -165,6 +166,13 @@ return {
 				return { state = { companyState = { [2] = { level = 12, potentialLevel = 12, experience = 123456,
 					ticketPriceMultiplier = 0.8036 } } } }
 			end
+			-- warehouse 801: 150 bricks (cargo 33) stored, cargo thrown away
+			if e == 801 and t == C.STOCK_LIST then
+				return { stocks = { { type = 2, cargoType = 33, capacity = 200 }, { type = 2, cargoType = -1, capacity = 200 } } }
+			end
+			if e == 801 and t == C.CONSTRUCTION then
+				return { fileName = "warehouse/warehouse_small.con", transf = { 1,0,0,0, 0,1,0,0, 0,0,1,0, 1300,3100,5,1 } }
+			end
 			return component(e, t)
 		end,
 		config = { getModParams = function() return { [""] = { ["advancedOptions.inflationFactor"] = 3 } } end },
@@ -172,6 +180,7 @@ return {
 			-- like the engine: sim entities cannot be iterated this way
 			if t == C.SIM_CARGO then error("Cannot loop over this component type") end
 			if t == C.MAINTENANCE_COST then error("Cannot loop over this component type") end
+			if t == C.STOCK_LIST then error("Cannot loop over this component type") end -- assumed: found via the systems
 			return {}
 		end,
 		entityExists = function() return true end,
@@ -181,6 +190,15 @@ return {
 			getYear = function() return 1905 end,
 			getCalendarDate = function() return { year = 1905, month = 3, day = 14 } end,
 			getEntityName = function(e) return names[e] or ("#" .. e) end,
+			stock = {
+				getStockListsWithThrownAwayCargo = function() return { [801] = 12 } end,
+				getInputsOutputsFromRules = function() return { {}, {} } end,
+				getCargoTypeShippedPerYear = function(e, ct) return ct == 33 and 90 or 0 end,
+				getCargoTypeDeliveredPerYear = function(e, ct) return ct == 33 and 160 or 0 end,
+				getCargoProducedPerYear = function() return 0 end,
+				getCargoConsumedPerYear = function() return 0 end,
+				getCargoMaxProductionPerYear = function() return 0 end,
+			},
 			finance = {
 				calculateBalance = function(ents, from, to, _maintOnly, maintType)
 					local l = lineOf(ents)
@@ -226,6 +244,10 @@ return {
 		system = {
 			vehicleDepotSystem = { forEach = function(fn) end },
 			gameScriptSystem = { getEntityForGameScript = function() return 950 end },
+			simEntityAtStockSystem = {
+				getStock2SimEntityMap = function() return { [{ 801, 0 }] = { 7001, 7002 } } end,
+				getStockCount = function(e, id) return (e == 801 and id == 0) and 150 or 0 end,
+			},
 			streetConnectorSystem = {
 				getStation2ConstructionMap = function() return { [701] = 601, [702] = 602 } end,
 				getConstructionEntityForDepot = function() return -1 end,

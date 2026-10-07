@@ -297,6 +297,19 @@ class LuaModTest(unittest.TestCase):
         self.assertIsNotNone(snap)
         self.assertEqual(len(snap["lines"]), 2)
 
+    def test_warehouse_stock_and_flows(self):
+        snap = self.collect()
+        w = [s for s in snap["stocks"] if s["id"] == 801]
+        self.assertEqual(len(w), 1, snap.get("errors"))
+        w = w[0]
+        self.assertTrue(w["warehouse"])
+        self.assertEqual(w["stocks"][0]["count"], 150)
+        self.assertEqual(w["stocks"][0]["type"], "StorageStock")
+        self.assertEqual(w["cargo"]["33"]["delivered"], 160)
+        self.assertEqual(w["cargo"]["33"]["shipped"], 90)
+        self.assertEqual(w["thrownAway"], 12)
+        self.assertEqual(w["pos"][:2], [1300, 3100])
+
     def test_health_projected_at_max_rank(self):
         snap = self.collect()
         h = snap["health"]
