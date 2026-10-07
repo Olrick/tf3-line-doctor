@@ -143,7 +143,16 @@ local function compassState()
 end
 
 local LineDoctorCompass = react.RegisterPluginRecipe(game_bar_widgets.GameBarInfoDisplayExtension, "LineDoctorCompass", function()
-	local state = engine_react_util.useStepStateTimer(compassState, 0.1)
+	-- The camera is GUI api: reading it inside useStepStateTimer fails with "api currently restricted" (that
+	-- hook reads the simulation). react.onStep runs in the GUI update, like the game's own buttons.
+	local state = react.useState({ heading = nil, raw = nil, err = nil })
+	react.onStep(function()
+		local new = compassState()
+		local old = state:old()
+		local changed = (new.err ~= old.err) or (new.heading == nil) ~= (old.heading == nil)
+			or (new.heading and old.heading and math.abs(new.heading - old.heading) >= 1)
+		if changed then state:set(new) end
+	end)
 	local s = state:old()
 	local label, tip = "?", "Boussole Line Doctor : " .. tostring(s.err or "orientation indisponible")
 	if s.heading then
