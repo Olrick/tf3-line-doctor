@@ -161,7 +161,9 @@ end
 -- no-break space (UTF-8 bytes): plain spaces at the edge of a TextView may be trimmed
 local NBSP = "\194\160"
 
-local LEVEL_CLASS = { vert = "positive", orange = "warning", rouge = "negative" }
+-- global classes of gui/main/default.css: success = Ok (green), warning = goldenrod, error = red
+-- ("positive" is the game's blue)
+local LEVEL_CLASS = { vert = "success", orange = "warning", rouge = "error" }
 
 local function decimal(v, pct)
 	if v == nil then return "n/a" end
