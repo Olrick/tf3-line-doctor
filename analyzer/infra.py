@@ -92,6 +92,11 @@ def build(snapshot: dict) -> dict:
         dx, dy = near["pos"][0] - b["pos"][0], near["pos"][1] - b["pos"][1]
         b["nearest"] = {"name": near["name"], "distance": (dx * dx + dy * dy) ** 0.5,
                         "dz": b["pos"][2] - near["pos"][2]}
+        # landmarks: the two closest buildings of any kind (orientation-free description, the map has no compass)
+        others = sorted((o for o in buildings if o is not b and o.get("pos")),
+                        key=lambda o: (o["pos"][0] - b["pos"][0]) ** 2 + (o["pos"][1] - b["pos"][1]) ** 2)[:2]
+        b["landmarks"] = [{"name": o["name"], "distance": ((o["pos"][0] - b["pos"][0]) ** 2
+                                                           + (o["pos"][1] - b["pos"][1]) ** 2) ** 0.5} for o in others]
 
     kinds: dict[str, dict] = {}
     for b in buildings:
@@ -136,7 +141,11 @@ def render(r: dict) -> str:
         if b.get("nearest"):
             n = b["nearest"]
             level = (" , %.0f m plus bas" % -n["dz"]) if n["dz"] < -3 else (" , %.0f m plus haut" % n["dz"]) if n["dz"] > 3 else ""
-            where = f"<div class='muted'>à {n['distance']:.0f} m de {html.escape(n['name'])}{level}</div>"
+            where = f"<div class='muted'>gare desservie la plus proche : {html.escape(n['name'])}, {n['distance']:.0f} m{level}</div>"
+            if len(b.get("landmarks") or []) == 2:
+                l1, l2 = b["landmarks"]
+                where += (f"<div class='muted'>repères : entre {html.escape(l1['name'])} ({l1['distance']:.0f} m) "
+                          f"et {html.escape(l2['name'])} ({l2['distance']:.0f} m)</div>")
         return (f"<tr><td><b>{html.escape(b['name'])}</b><div class='muted'>{html.escape(b['kind'])}</div>{where}</td>"
                 f"<td class='r neg'>{_m(b['cost'])}</td>"
                 f"<td>{html.escape(', '.join(b['lines']) or '—')} {flag}</td>"
