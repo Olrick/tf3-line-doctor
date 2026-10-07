@@ -19,6 +19,7 @@ import chains  # noqa: E402
 import infra as infra_mod  # noqa: E402
 import archive  # noqa: E402
 import history  # noqa: E402
+import health  # noqa: E402
 
 try:
     from lupa import LuaRuntime
@@ -226,7 +227,7 @@ class LuaModTest(unittest.TestCase):
         seg1 = 500.0
         seg2 = math.sqrt(600**2 + 800**2 + 10**2) + 80          # climb of 10 m counts 8x
         rest = 1000.0
-        price = 3.9 * (math.sqrt(1500**2 + 2000**2 + 10**2) + 80) * 1.0  # no inflation
+        price = 3.9 * (math.sqrt(1500**2 + 2000**2 + 10**2) + 80) * 0.8036  # company multiplier read from the game
         total = seg1 + seg2 + rest
         self.assertEqual(res["items"], 1)
         self.assertAlmostEqual(res["lines"]["100"]["done"], price * seg1 / total, delta=0.01)  # json keeps 6 digits
@@ -347,6 +348,21 @@ class LuaModTest(unittest.TestCase):
         self.assertEqual(h["groups"]["Recettes"], [40000, 42000])
         self.assertEqual(h["groups"]["Entretien des bâtiments"], [-25000, -27000])
         self.assertIn("Historique", history.render(h))
+
+    def test_health_check_stress_test(self):
+        snap = self.collect()
+        self.assertEqual((snap["company"]["rank"], snap["company"]["priceMultiplierAtMaxRank"]), (12, 0.75))
+        h = health.build(snap, [snap])
+        self.assertAlmostEqual(h["scale"], 0.75 / 0.8036, places=4)
+        self.assertEqual([r["name"] for r in h["ratios"]][0], "Recettes ÷ fonctionnement des véhicules")
+        # mock period: income 40 000, running −20 000 -> ratio 2.0 (green); buildings 25 000 / 40 000 = 62 % (red)
+        self.assertEqual(h["ratios"][0]["level"], "vert")
+        self.assertEqual(h["ratios"][1]["level"], "rouge")
+        # Bus 1 loses money already; at rank 15 its loss grows by its income x (1 - 0.75 / 0.8036)
+        bus = next(l for l in h["losing"] if l["name"] == "Bus 1")
+        self.assertAlmostEqual(bus["atMax"], bus["net"] - bus["income"] * (1 - 0.75 / 0.8036))
+        self.assertIn("Bilan de santé", health.render(h))
+        self.assertIn("Rang 12/15", health.summary_text(h))
 
     def test_end_to_end_diagnostics(self):
         result = analyze.analyze(self.collect())

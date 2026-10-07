@@ -34,6 +34,16 @@ bâtiment par bâtiment (gares sans ligne, bâtiments coûteux) :
 python analyzer/infra.py --html out/infrastructure.html
 ```
 
+Bilan de santé (ratios avec seuils, rang et inflation, test de résistance au rang 15, lignes fragiles) :
+
+```bash
+python analyzer/health.py --html out/sante.html
+```
+
+Seuils (tirés de « TF3 A », sain jusqu'en 1959) : recettes ÷ fonctionnement des véhicules ≥ 2,0 ; entretien des
+bâtiments ≤ 20 % des recettes ; entretien des véhicules ≤ 9 %. Avec l'inflation, une ligne doit rester rentable
+au rang 15 (recettes × multiplicateur au rang 15 ÷ multiplicateur actuel).
+
 Historique de la compagnie année par année (journal du jeu, depuis le début de la partie) :
 
 ```bash

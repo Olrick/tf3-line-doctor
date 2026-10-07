@@ -537,6 +537,23 @@ function M.collect(api)
 		end),
 		earningsThisYear = player and try("calculateEarnings", util.finance.calculateEarnings, player),
 	}
+	-- company rank and TF3 "inflation": ticket prices are multiplied by 1 - (rank - 1) x (1 - floor) / 14,
+	-- floor set by the game option (None 1, Low 0.9, Normal 0.75, High 0.6, Very high 0.5)
+	pcall(function()
+		local e = api.engine.system.gameScriptSystem.getEntityForGameScript("::game_mechanics/company/company_progression.gs")
+		local gs = api.engine.getComponent(e, C.GAME_SCRIPT)
+		local data = gs.state.companyState[player]
+		snapshot.company.rank = data.level
+		snapshot.company.potentialRank = data.potentialLevel
+		snapshot.company.experience = data.experience
+		snapshot.company.priceMultiplier = num(data.ticketPriceMultiplier) or 1.0
+	end)
+	pcall(function()
+		local option = api.engine.config.getModParams()[""]["advancedOptions.inflationFactor"]
+		snapshot.company.inflationOption = option
+		snapshot.company.priceMultiplierAtMaxRank = ({ 1, 0.9, 0.75, 0.6, 0.5 })[option]
+	end)
+	snapshot.company.maxRank = 15
 
 	snapshot.financeTable = player and try("computeFinanceTable", collectFinanceTable, api, player)
 	-- the whole company history, one column per simulated year (the engine keeps its journal since the start)

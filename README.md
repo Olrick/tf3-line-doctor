@@ -58,6 +58,7 @@ python analyzer/analyze.py --deficit-only
 | `…/content/line_doctor/line_doctor.script.lua` | game script : déclenchement et écriture de l'export |
 | `analyzer/analyze.py` | métriques, diagnostics, rapport Markdown/JSON |
 | `analyzer/infra.py` | entretien de l'infrastructure bâtiment par bâtiment (gares sans ligne, plus coûteuses), page HTML |
+| `analyzer/health.py` | bilan de santé : ratios avec seuils, rang et inflation, test de résistance au rang 15 |
 | `analyzer/history.py` | historique de la compagnie année par année (journal du jeu), page HTML |
 | `analyzer/archive.py` | archive les exports du journal du jeu dans `exports/<partie>/` (lancé automatiquement) |
 | `analyzer/chains.py` | chaînes de marchandises de bout en bout (profit en attente par étape), page HTML |

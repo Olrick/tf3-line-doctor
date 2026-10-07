@@ -8,7 +8,7 @@ local YEAR = 1461000 -- value observed in game
 local NUM_CARGO_TYPES = 37
 local NOW = 5 * YEAR
 
-local C = { LINE = 1, GAME_TIME = 2, TRANSPORT_VEHICLE = 3, ACCOUNT = 4, SIM_CARGO = 5, SIM_ENTITY_AT_VEHICLE = 6, CONSTRUCTION = 7, SIM_ENTITY_AT_TERMINAL = 8, MAINTENANCE_COST = 9, BASE_EDGE = 10, BASE_EDGE_STREET = 11 }
+local C = { LINE = 1, GAME_TIME = 2, TRANSPORT_VEHICLE = 3, ACCOUNT = 4, SIM_CARGO = 5, SIM_ENTITY_AT_VEHICLE = 6, CONSTRUCTION = 7, SIM_ENTITY_AT_TERMINAL = 8, MAINTENANCE_COST = 9, BASE_EDGE = 10, BASE_EDGE_STREET = 11, GAME_SCRIPT = 12 }
 
 -- a coal unit delivered by line 200 after a first leg on line 100 (sim 9002)
 local simCargo = {
@@ -160,7 +160,14 @@ return {
 		modelRep = { getName = function(id) return "model_" .. id .. ".mdl" end },
 	},
 	engine = {
-		getComponent = component,
+		getComponent = function(e, t)
+			if t == C.GAME_SCRIPT and e == 950 then
+				return { state = { companyState = { [2] = { level = 12, potentialLevel = 12, experience = 123456,
+					ticketPriceMultiplier = 0.8036 } } } }
+			end
+			return component(e, t)
+		end,
+		config = { getModParams = function() return { [""] = { ["advancedOptions.inflationFactor"] = 3 } } end },
 		getEntitiesWithComponent = function(t)
 			-- like the engine: sim entities cannot be iterated this way
 			if t == C.SIM_CARGO then error("Cannot loop over this component type") end
@@ -218,6 +225,7 @@ return {
 		},
 		system = {
 			vehicleDepotSystem = { forEach = function(fn) end },
+			gameScriptSystem = { getEntityForGameScript = function() return 950 end },
 			streetConnectorSystem = {
 				getStation2ConstructionMap = function() return { [701] = 601, [702] = 602 } end,
 				getConstructionEntityForDepot = function() return -1 end,
