@@ -113,7 +113,7 @@ end)
 -- The game has no official north: "N" is the map's +y axis, the convention of the Line Doctor reports.
 -- api.gui.camera.getCameraData() = {x, y, distance, angle, pitch}; the zero and direction of `angle` are not
 -- documented: heading = OFFSET + SIGN x angle (degrees), calibrated in game (the raw angle is shown for that).
-local COMPASS_OFFSET_DEG = 0
+local COMPASS_OFFSET_DEG = 219 -- calibrated 2026-10-07: raw 206° when facing a landmark at map bearing 65°
 local COMPASS_SIGN = 1
 local DIRECTIONS = { "N", "NE", "E", "SE", "S", "SW", "W", "NW" }
 
