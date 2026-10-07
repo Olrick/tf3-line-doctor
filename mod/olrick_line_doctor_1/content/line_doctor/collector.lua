@@ -527,7 +527,7 @@ local function collectStocks(api)
 		for e, n in pairs(util.stock.getStockListsWithThrownAwayCargo()) do add(e); thrown[num(e)] = num(n) end
 	end)
 
-	local storageType = try("StockListType enum", function() return api.type.StockListType.StorageStock end)
+	local storageType = api.type.StockListType and api.type.StockListType.StorageStock or nil
 	local out = {}
 	for _, e in ipairs(order) do
 		pcall(function()
@@ -552,7 +552,8 @@ local function collectStocks(api)
 				local id = i - 1 -- StockId: index in the list, 0-based like the engine's other ids
 				local entry = { stockId = id, type = enumName(api.type.StockListType, st.type), cargoType = num(st.cargoType),
 					capacity = num(st.capacity), count = try("getStockCount", sys.simEntityAtStockSystem.getStockCount, e, id) }
-				if storageType ~= nil and st.type == storageType then s.warehouse = true end
+				-- api.type.StockListType is nil in game: StorageStock = 2 (Input 0, Output 1), checked 1938 on warehouses
+				if (storageType ~= nil and st.type == storageType) or num(st.type) == 2 then s.warehouse = true end
 				if entry.cargoType and entry.cargoType >= 0 then cargoTypes[entry.cargoType] = true end
 				s.stocks[#s.stocks + 1] = entry
 			end
