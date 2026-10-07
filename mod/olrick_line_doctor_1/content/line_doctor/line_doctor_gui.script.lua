@@ -1,7 +1,9 @@
 -- Line Doctor in-game GUI (read-only).
 --
--- One plugin, registered by line_doctor_card.res.lua: a "Line Doctor" card in every line window
--- (LineEowExtensionPoint), built like the game's own line cards.
+-- Two plugins, registered by the .res.lua files next to this script:
+--   * LineDoctorLineCard : a "Line Doctor" card in every line window (LineEowExtensionPoint), built like the
+--     game's own line cards;
+--   * LineDoctorCompass  : a compass in the top game bar (GameBarInfoDisplayExtension), next to "Earnings".
 --
 -- No mod button/window: plugin recipes must return a layout, and game windows are opened through the
 -- window container of gameCtx, which the mod button area does not provide (crash "Recipe child must be a
@@ -15,6 +17,7 @@ local builtin = ug_require "::/gui/main/builtin.lua"
 local content_card = ug_require "::/gui/main/content_card.tl"
 local engine_react_util = ug_require "::/gui/main/engine_react_util.tl"
 local line_eow = ug_require "::/gui/entity_window/line/line_eow.script.tl"
+local game_bar_widgets = ug_require "::/gui/game_bar/game_bar_widgets.tl"
 
 local GAME_SCRIPT = "olrick_line_doctor_1::/line_doctor/line_doctor.gs"
 
@@ -101,8 +104,61 @@ local LineDoctorLineCard = react.RegisterPluginRecipe(line_eow.LineEowExtensionP
 	}
 end)
 
+-- ---------------------------------------------------------------------------
+-- compass in the top game bar
+-- ---------------------------------------------------------------------------
+
+-- The game has no official north: "N" is the map's +y axis, the convention of the Line Doctor reports.
+-- api.gui.camera.getCameraData() = {x, y, distance, angle, pitch}; the zero and direction of `angle` are not
+-- documented: heading = OFFSET + SIGN x angle (degrees), calibrated in game (the raw angle is shown for that).
+local COMPASS_OFFSET_DEG = 0
+local COMPASS_SIGN = 1
+local DIRECTIONS = { "N", "NE", "E", "SE", "S", "SW", "W", "NW" }
+
+local function compassState()
+	local out = { heading = nil, raw = nil }
+	pcall(function()
+		local cam = api.gui.camera.getCameraData()
+		local angle = cam.w
+		if angle == nil then angle = cam[4] end
+		local raw = math.deg(angle)
+		out.raw = raw
+		out.heading = (COMPASS_OFFSET_DEG + COMPASS_SIGN * raw) % 360
+	end)
+	return out
+end
+
+local LineDoctorCompass = react.RegisterPluginRecipe(game_bar_widgets.GameBarInfoDisplayExtension, "LineDoctorCompass", function()
+	local state = engine_react_util.useStepStateTimer(compassState, 0.1)
+	local s = state:old()
+	local label, tip = "?", "Boussole Line Doctor : orientation indisponible"
+	if s.heading then
+		label = DIRECTIONS[math.floor((s.heading + 22.5) / 45) % 8 + 1]
+		tip = string.format("Boussole Line Doctor : cap %d° (angle brut de la caméra %.0f°). N = axe y de la carte.",
+			math.floor(s.heading + 0.5), s.raw)
+	end
+	return builtin.BoxLayout{
+		orientation = builtin.type.Orientation.Horizontal,
+		children = {
+			builtin.Component {
+				meta = { tooltip = tip },
+				layout = builtin.BoxLayout{
+					orientation = builtin.type.Orientation.Horizontal,
+					children = {
+						builtin.TextView{ meta = { class = "font-scale-headline" }, text = "Cap" },
+						builtin.TextView{ meta = { class = "font-scale-headline" }, text = label },
+						builtin.TextView{ meta = { class = "font-scale-body" },
+							text = s.heading and string.format("%d°", math.floor(s.heading + 0.5)) or "" },
+					},
+				},
+			},
+		},
+	}
+end)
+
 function data()
 	return {
 		LineDoctorLineCard = LineDoctorLineCard,
+		LineDoctorCompass = LineDoctorCompass,
 	}
 end
