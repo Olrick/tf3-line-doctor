@@ -1,130 +1,131 @@
-# Line Doctor — diagnostic des lignes pour Transport Fever 3
+# Line Doctor — line diagnostics for Transport Fever 3
 
-Line Doctor est en **deux parties** :
+*English · [Français](README.fr.md)*
 
-1. **Un mod Transport Fever 3** (`olrick_line_doctor_1`), utilisable seul : une boussole et un voyant de
-   **santé** de la compagnie dans la barre du bas, une carte « Line Doctor » dans la fenêtre de chaque ligne,
-   et un export mensuel de l'état détaillé de la partie.
-2. **Une interface avec Claude** (ce dépôt, ouvert dans Claude Code) : des analyseurs Python et des instructions
-   qui permettent à Claude de lire l'export et d'expliquer pourquoi une ligne, une chaîne de production ou la
-   compagnie perd de l'argent, et quoi faire.
+Line Doctor comes in **two parts**:
+
+1. **A Transport Fever 3 mod** (`olrick_line_doctor_1`) that works on its own: a compass and a company
+   **health** indicator in the bottom bar, a "Line Doctor" card in every line window, and a monthly export of
+   the detailed state of your game.
+2. **An interface with Claude** (this repository, opened in Claude Code): Python analyzers and instructions
+   that let Claude read the export and explain why a line, a production chain or the whole company is losing
+   money, and what to do about it.
 
 ```
- Transport Fever 3 (le mod)                       Claude Code (ce dépôt)
+ Transport Fever 3 (the mod)                       Claude Code (this repository)
 ┌───────────────────────────────────┐          ┌──────────────────────────────────────┐
-│ barre du bas : Cap · Santé ● ● ● ●│          │ analyzer/*.py   → métriques, rapports │
-│ fenêtre de ligne : carte          │  export  │ skill analyze-lines → explications    │
-│ game script (lecture seule) ──────┼────────▶ │                       et remèdes      │
-│   export au chargement + 1×/mois  │stdout.txt│ exports/<partie>/ → historique        │
+│ bottom bar: Cap · Santé ● ● ● ●   │          │ analyzer/*.py   → metrics, reports    │
+│ line window: card                 │  export  │ skill analyze-lines → explanations    │
+│ game script (read-only) ──────────┼────────▶ │                       and fixes       │
+│   export on load + once a month   │stdout.txt│ exports/<game>/ → history            │
 └───────────────────────────────────┘          └──────────────────────────────────────┘
 ```
 
-Le mod est **en lecture seule** : il n'envoie aucune commande au jeu, ne modifie aucun prix et n'écrit rien
-dans la comptabilité. Il est marqué `cosmetic` pour ne pas bloquer les succès.
+The mod is **read-only**: it sends no command to the game, changes no price and writes nothing to the
+accounts. It is flagged `cosmetic` so it does not block achievements.
+
+> **Language:** the in-game labels (`Cap`, `Santé`, tooltips) and Claude's answers are currently in French.
 
 ---
 
-## Partie 1 — Ce qui est intégré à TF3
+## Part 1 — What runs inside TF3
 
-### La boussole
+### The compass
 
-Dans la barre du bas, à gauche des gains : **`Cap NE 45°`**.
+In the bottom bar, left of the earnings: **`Cap NE 45°`**.
 
-- Elle indique la direction vers laquelle regarde la caméra : N, NE, E, SE, S, SW, W, NW et le cap en degrés.
-- TF3 n'a pas de nord officiel : ici, **le nord est l'axe +y de la carte**, le cap tourne dans le sens des
-  aiguilles d'une montre. C'est la même convention que les rapports de Claude (« la gare est à 2 km au
-  cap 330° »), ce qui permet de retrouver en jeu un bâtiment qu'il signale.
-- Calibrée en jeu sur plusieurs repères.
+- It shows where the camera is looking: N, NE, E, SE, S, SW, W, NW and the heading in degrees.
+- TF3 has no official north: here **north is the map's +y axis**, headings go clockwise. Claude's reports use
+  the same convention ("the station is 2 km away, heading 330°"), so you can find in game a building it points
+  out.
+- Calibrated in game against several landmarks.
 
-### La santé de la compagnie
+### Company health
 
-À côté de la boussole : **`Santé ● ● ● ●`**, un point par indicateur, en **vert**, **orange** ou **rouge**.
-Survoler le mot affiche le détail (valeurs et seuils).
+Next to the compass: **`Santé ● ● ● ●`** (health), one dot per indicator, **green**, **orange** or **red**.
+Hover over it for the details (values and thresholds).
 
-**Ce que mesure la santé.** Quatre ratios qui disent si la compagnie est structurellement rentable, au-delà
-du résultat du mois :
+**What health measures.** Four ratios that tell whether the company is structurally profitable, beyond this
+month's result:
 
-| Point | Indicateur | Vert | Orange | Rouge | Ce qu'il surveille |
+| Dot | Indicator | Green | Orange | Red | What it watches |
 |---|---|---|---|---|---|
-| 1 | Recettes ÷ fonctionnement des véhicules | ≥ 2,0 | 1,7 – 2,0 | < 1,7 | les véhicules rapportent-ils assez par rapport à ce qu'ils coûtent à faire rouler ? |
-| 2 | Entretien des bâtiments ÷ recettes | ≤ 20 % | 20 – 28 % | > 28 % | trop de gares, dépôts, ports pour ce qu'ils rapportent |
-| 3 | Entretien des véhicules ÷ recettes | ≤ 9 % | 9 – 11 % | > 11 % | flotte trop vieille ou mal entretenue |
-| 4 | Résultat d'exploitation ÷ recettes | ≥ 10 % | 0 – 10 % | < 0 % | la compagnie gagne-t-elle de l'argent hors investissements ? |
+| 1 | Income ÷ vehicle running costs | ≥ 2.0 | 1.7 – 2.0 | < 1.7 | do vehicles earn enough compared to what they cost to run? |
+| 2 | Building upkeep ÷ income | ≤ 20 % | 20 – 28 % | > 28 % | too many stations, depots, ports for what they bring in |
+| 3 | Vehicle maintenance ÷ income | ≤ 9 % | 9 – 11 % | > 11 % | fleet too old or badly maintained |
+| 4 | Operating result ÷ income | ≥ 10 % | 0 – 10 % | < 0 % | does the company make money, investments aside? |
 
-Les seuils viennent d'une vraie partie, saine jusqu'en 1959 puis déficitaire : à l'entrée en déficit, les
-ratios 1 à 3 étaient respectivement de 1,6, 34 % et 12 %.
+The thresholds come from a real game that was healthy until 1959 and then went into deficit: at that point
+ratios 1 to 3 were 1.6, 34 % and 12 %.
 
-**Calcul projeté au niveau max.** Avec l'inflation de TF3, le prix payé par passager ou par tonne baisse à
-chaque promotion de la compagnie (jusqu'à ×0,75 au rang 15 en inflation Normale), alors que les coûts des
-véhicules et des bâtiments ne baissent jamais. La santé est donc calculée **comme si la compagnie était
-déjà au rang maximal** : recettes × (multiplicateur au rang 15 ÷ multiplicateur actuel), coûts inchangés.
-Conséquences :
+**Projected at the maximum rank.** With TF3's inflation, the price paid per passenger or per ton drops with
+every company promotion (down to ×0.75 at rank 15 with Normal inflation), while vehicle and building costs
+never drop. Health is therefore computed **as if the company had already reached the maximum rank**:
+income × (multiplier at rank 15 ÷ current multiplier), costs unchanged. As a result:
 
-- un voyant vert aujourd'hui le restera après toutes les promotions ;
-- une promotion ne change pas les voyants : seuls les recettes, les coûts et les bâtiments les font bouger ;
-- sans inflation (option du jeu), la projection ne change rien.
+- a dot that is green today stays green through every promotion;
+- a promotion does not change the dots: only income, costs and buildings move them;
+- with inflation turned off (game option), the projection changes nothing.
 
-Le calcul porte sur les **12 derniers mois terminés** du tableau des finances du jeu, **hors subventions**
-(ponctuelles). Il est refait à chaque export mensuel ; avant le premier, le voyant affiche « Santé … ».
+The calculation covers the **last 12 complete months** of the game's finance table, **excluding subsidies**
+(one-off). It is refreshed at every monthly export; before the first one, the indicator shows "Santé …".
 
-### La carte Line Doctor dans la fenêtre de ligne
+### The Line Doctor card in the line window
 
-Dans la fenêtre de chaque ligne, une carte « Line Doctor » indique le **profit en attente** : les recettes
-déjà acquises par la ligne mais pas encore versées. Dans TF3, une marchandise n'est payée qu'à sa livraison au
-client final, pour tous les segments du trajet : une ligne d'apport peut sembler déficitaire alors que ses
-marchandises sont en route.
+Each line window gets a "Line Doctor" card showing the **pending profit**: income already earned by the line
+but not paid yet. In TF3 cargo is paid only when it reaches its final customer, for every leg of the trip: a
+feeder line can look unprofitable while its cargo is still on its way.
 
-### L'export
+### The export
 
-À chaque chargement de partie puis chaque mois de jeu (le jeu ne doit pas être en pause), le mod écrit dans le
-journal du jeu (`stdout.txt`) un instantané de la partie, entre des marqueurs `LINE_DOCTOR_BEGIN` /
-`LINE_DOCTOR_END` : les scripts de jeu de TF3 n'ont pas le droit d'écrire de fichiers.
+When a game is loaded and then every in-game month (the game must not be paused), the mod writes a snapshot of
+the game to the game log (`stdout.txt`), between `LINE_DOCTOR_BEGIN` / `LINE_DOCTOR_END` markers: TF3 game
+scripts are not allowed to write files.
 
-Contenu, par ligne : arrêts, finances sur 12 mois et série mensuelle, capacité et chargement, passagers ou
-marchandises en attente par arrêt, temps de section réels et théoriques, véhicules (modèle, âge, état
-d'entretien, coût annuel, recettes), problèmes signalés par le jeu. Pour la compagnie : trésorerie, emprunt,
-rang et inflation, tableau des finances, entretien de chaque bâtiment, **stocks des entrepôts et des
-usines** (quantités stockées, produites, livrées, expédiées par an, marchandises jetées), prix des billets
-observés et profit en attente.
+Per line: stops, 12-month finances and monthly series, capacity and load, passengers or cargo waiting at each
+stop, actual vs theoretical section times, vehicles (model, age, condition, yearly cost, income), problems
+reported by the game. Company-wide: cash, loan, rank and inflation, finance table, upkeep of every building,
+**warehouse and industry stocks** (stored, produced, delivered, shipped per year, cargo thrown away), observed
+ticket prices and pending profit.
 
 ---
 
-## Partie 2 — L'interface avec Claude
+## Part 2 — The interface with Claude
 
-Ouvrir ce dépôt dans **Claude Code** et poser des questions en français, par exemple :
+Open this repository in **Claude Code** and ask questions, for example:
 
-- « analyse mes lignes TF3 », « santé ? », « pourquoi ma trésorerie s'enfonce ? »
-- « analyse la chaîne qui livre les vêtements à Vandœuvre », « montre l'infrastructure »
-- « regarde l'entrepôt de Vitry », « est-ce que je peux rentabiliser un train rapide ? »
+- "analyse my TF3 lines", "health?", "why is my cash going down?"
+- "analyse the chain that delivers clothes to Vandœuvre", "show the infrastructure"
+- "look at the Vitry warehouse", "can a fast train be profitable?"
 
-Claude suit les instructions de [.claude/skills/analyze-lines/SKILL.md](.claude/skills/analyze-lines/SKILL.md) :
-il lit le dernier export, lance les analyseurs, recoupe les indices et répond avec les causes, les chiffres et
-des actions concrètes à faire dans le jeu. Il ne joue pas à votre place : le mod ne peut rien modifier.
+Claude follows [.claude/skills/analyze-lines/SKILL.md](.claude/skills/analyze-lines/SKILL.md): it reads the
+latest export, runs the analyzers, cross-checks the clues and answers with causes, figures and concrete
+actions to take in the game. It does not play for you: the mod cannot change anything.
 
-Les analyseurs peuvent aussi être lancés directement :
+The analyzers can also be run directly:
 
-| Commande | Résultat |
+| Command | Output |
 |---|---|
-| `python analyzer/analyze.py --deficit-only` | métriques et diagnostics par ligne (`OVERCAPACITY`, `QUEUE`, `TRANSFER_DEPENDENT`, `POOR_MAINTENANCE`…), tableau des finances |
-| `python analyzer/health.py --html out/sante.html` | bilan de santé détaillé : ratios, rang et inflation, test de résistance au rang 15, lignes fragiles |
-| `python analyzer/chains.py --html out/chaines.html` | chaînes de production de bout en bout, du client final aux matières premières, profit par segment |
-| `python analyzer/infra.py --html out/infrastructure.html` | entretien bâtiment par bâtiment, gares sans ligne |
-| `python analyzer/history.py --html out/historique.html` | historique de la compagnie année par année |
+| `python analyzer/analyze.py --deficit-only` | metrics and diagnostics per line (`OVERCAPACITY`, `QUEUE`, `TRANSFER_DEPENDENT`, `POOR_MAINTENANCE`…), finance table |
+| `python analyzer/health.py --html out/sante.html` | detailed health check: ratios, rank and inflation, stress test at rank 15, fragile lines |
+| `python analyzer/chains.py --html out/chaines.html` | end-to-end production chains, from the final customer back to raw materials, profit per leg |
+| `python analyzer/infra.py --html out/infrastructure.html` | upkeep building by building, stations without a line |
+| `python analyzer/history.py --html out/historique.html` | company history year by year |
 
-Chaque analyse archive les exports du journal dans `exports/<identifiant de partie>/`, car le journal du jeu
-est effacé à chaque lancement : l'historique des parties est ainsi conservé.
+Every analysis archives the exports found in the game log into `exports/<game id>/`, because the game log is
+wiped at each launch: the history of your games is kept.
 
 ---
 
 ## Installation
 
-### Prérequis
+### Requirements
 
-- **Windows** et **Transport Fever 3** sur Steam.
-- Pour la partie Claude : **[Claude Code](https://claude.com/claude-code)**, **Python 3.10+** et **git**.
-- Pour les tests hors jeu (facultatif) : `pip install lupa`.
+- **Windows** and **Transport Fever 3** on Steam.
+- For the Claude part: **[Claude Code](https://claude.com/claude-code)**, **Python 3.10+** and **git**.
+- For the offline tests (optional): `pip install lupa`.
 
-### 1. Récupérer le dépôt
+### 1. Get the repository
 
 ```bash
 git clone https://github.com/Olrick/tf3-line-doctor.git
@@ -134,33 +135,33 @@ git clone https://github.com/Olrick/tf3-line-doctor.git
 cd tf3-line-doctor
 ```
 
-### 2. Installer le mod dans TF3
+### 2. Install the mod into TF3
 
 ```bash
 powershell -ExecutionPolicy Bypass -File scripts/install.ps1
 ```
 
-Le script trouve tout seul le dossier de données de TF3
-(`C:\Program Files (x86)\Steam\userdata\<identifiant Steam>\3493540\local\`) et copie le mod dans son
-sous-dossier `mods\`. Options :
+The script finds the TF3 user data folder on its own
+(`C:\Program Files (x86)\Steam\userdata\<Steam id>\3493540\local\`) and copies the mod into its `mods\`
+subfolder. Options:
 
-- `-UserData "<chemin>\3493540\local"` si le dossier n'est pas trouvé ;
-- `-Link` pour développer : crée un lien vers le dépôt au lieu d'une copie.
+- `-UserData "<path>\3493540\local"` if the folder is not found;
+- `-Link` for development: creates a link to the repository instead of a copy.
 
-### 3. Activer le mod
+### 3. Enable the mod
 
-1. Lancer TF3.
-2. Créer une partie ou charger une sauvegarde : dans la liste des mods, cocher **Line Doctor**.
-3. Laisser tourner le jeu quelques secondes, **pas en pause** : la boussole s'affiche tout de suite, la santé
-   après le premier export.
+1. Start TF3.
+2. Create a game or load a save: in the mod list, tick **Line Doctor**.
+3. Let the game run a few seconds, **not paused**: the compass shows up right away, health after the first
+   export.
 
-### 4. Utiliser l'interface Claude
+### 4. Use the Claude interface
 
-Ouvrir le dossier du dépôt dans Claude Code et demander « analyse mes lignes TF3 ». Claude lit le journal du
-jeu (`…\3493540\local\crash_dump\stdout.txt`) ; si aucun export n'est trouvé, vérifier que le mod est coché
-dans la partie et que le jeu n'est pas en pause.
+Open the repository folder in Claude Code and ask "analyse my TF3 lines". Claude reads the game log
+(`…\3493540\local\crash_dump\stdout.txt`); if no export is found, check that the mod is ticked in the game and
+that the game is not paused.
 
-### Mettre à jour
+### Updating
 
 ```bash
 git pull
@@ -170,25 +171,25 @@ git pull
 powershell -ExecutionPolicy Bypass -File scripts/install.ps1
 ```
 
-- Si seuls des fichiers existants ont changé : **recharger la partie** suffit.
-- Si un fichier a été **ajouté** au mod : **quitter complètement TF3 et le relancer** (le jeu n'indexe les
-  nouveaux fichiers qu'au démarrage).
+- If only existing files changed: **reloading the save** is enough.
+- If a file was **added** to the mod: **quit TF3 completely and restart it** (the game only indexes new files
+  at startup).
 
 ---
 
-## Structure du dépôt
+## Repository layout
 
-| Chemin | Rôle |
+| Path | Role |
 |---|---|
-| `mod/olrick_line_doctor_1/` | le mod TF3 |
-| `…/line_doctor/collector.lua` | collecte des données et calcul de la santé (toutes les API protégées par `pcall`) |
-| `…/line_doctor/line_doctor.script.lua` | game script : déclenchement et écriture de l'export |
-| `…/line_doctor/line_doctor_gui.script.lua` | interface en jeu : boussole, santé, carte de ligne |
-| `…/line_doctor/pending.lua`, `ticket_probe.lua` | profit en attente, observation des prix des billets |
-| `analyzer/` | analyseurs Python (voir la partie 2) |
-| `.claude/skills/analyze-lines/` | instructions pour Claude |
-| `tests/` | tests hors jeu : le vrai code Lua du mod contre une API de jeu simulée |
-| `docs/TESTING.md` | procédure de test en jeu |
+| `mod/olrick_line_doctor_1/` | the TF3 mod |
+| `…/line_doctor/collector.lua` | data collection and health calculation (every API call wrapped in `pcall`) |
+| `…/line_doctor/line_doctor.script.lua` | game script: triggers and writes the export |
+| `…/line_doctor/line_doctor_gui.script.lua` | in-game interface: compass, health, line card |
+| `…/line_doctor/pending.lua`, `ticket_probe.lua` | pending profit, ticket price observation |
+| `analyzer/` | Python analyzers (see part 2) |
+| `.claude/skills/analyze-lines/` | instructions for Claude |
+| `tests/` | offline tests: the mod's real Lua code against a simulated game API |
+| `docs/TESTING.md` | in-game test procedure (French) |
 
 ## Tests
 
@@ -200,4 +201,4 @@ pip install lupa
 python -m unittest discover -s tests -v
 ```
 
-Voir [docs/TESTING.md](docs/TESTING.md) pour la procédure en jeu.
+See [docs/TESTING.md](docs/TESTING.md) for the in-game procedure.
