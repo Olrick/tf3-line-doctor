@@ -28,6 +28,23 @@ if not okPendingModule then pending = nil end
 local LOG_PREFIX = "[LineDoctor] "
 local LOG_CHUNK = 3000
 local REFRESH_REAL_SEC = 300
+-- Event subscriptions are saved with the game. Version 2 keeps OnCalcTicketPrice only: OnToArriveAtDestination
+-- (an early investigation, unused by the analyzers) fired at every arrival of every passenger and cargo, and each
+-- event reads and rewrites the whole saved state.
+local EVENT_SUBSCRIPTIONS = 2
+
+-- wall-clock seconds with millisecond resolution (os.clock is wall time with the Windows C runtime), or nil
+local function preciseClock()
+	local ok, t = pcall(function() return os and os.clock and os.clock() end)
+	if ok then return t end
+	return nil
+end
+
+local function elapsedMs(t0)
+	local t1 = preciseClock()
+	if t0 == nil or t1 == nil then return nil end
+	return math.floor((t1 - t0) * 1000 + 0.5)
+end
 
 local function clock()
 	local ok, t = pcall(function() return os and os.time and os.time() end)
@@ -89,8 +106,10 @@ local function writeToLog(compact)
 	log("LINE_DOCTOR_END")
 end
 
-local function export(reason, ticketProbe, pendingIncome, gameId)
+local function export(reason, ticketProbe, pendingIncome, gameId, perf)
+	local t0 = preciseClock()
 	local ok, snapshot = pcall(collector.collect, api)
+	local collectMs = elapsedMs(t0)
 	if not ok then
 		log("collect failed: " .. tostring(snapshot))
 		return nil
@@ -99,10 +118,17 @@ local function export(reason, ticketProbe, pendingIncome, gameId)
 	snapshot.gameId = gameId
 	snapshot.ticketProbe = ticketProbe
 	snapshot.pendingIncome = pendingIncome
+	snapshot.perf = perf or {}
+	snapshot.perf.collectMs = collectMs
 
-	local pretty = json.encode(snapshot, "  ")
+	-- the indented copy is only written to export.json: skip it when game scripts cannot write files (TF3)
+	local canWrite = io ~= nil and io.open ~= nil
+	local t0 = preciseClock()
 	local compact = json.encode(snapshot)
-	local path = writeToFile(pretty, compact)
+	local pretty = canWrite and json.encode(snapshot, "  ") or nil
+	-- measured after encoding, so only logged (the export size is known to the analyzer)
+	log(string.format("export cost: collect %s ms, encode %s ms", tostring(snapshot.perf and snapshot.perf.collectMs), tostring(elapsedMs(t0))))
+	local path = canWrite and writeToFile(pretty, compact) or nil
 	if path then
 		log(string.format("exported %d lines (%d bytes, %d api errors) to %s",
 			#snapshot.lines, #pretty, #snapshot.errors, path))
@@ -125,15 +151,19 @@ function data()
 			end)
 			if not okTime or now == nil then return end
 
-			-- price and delivery events, observed only (see ticket_probe.lua)
-			pcall(function()
-				if not state:hasEventSubscriptions() then
-					state:subscribeToEvent("OnCalcTicketPrice")
-					state:subscribeToEvent("OnToArriveAtDestination")
-				end
-			end)
-
 			local s = state:get() or {}
+
+			-- price events, observed only (see ticket_probe.lua); older saves are re-subscribed once
+			if s.eventSubscriptions ~= EVENT_SUBSCRIPTIONS then
+				local okSub = pcall(function()
+					state:subscribeToNoEvents()
+					state:subscribeToEvent("OnCalcTicketPrice")
+				end)
+				if okSub then
+					s.eventSubscriptions = EVENT_SUBSCRIPTIONS
+					state:set(s)
+				end
+			end
 			-- identifies this game across sessions (saved with it), so exports can be archived per game
 			if s.gameId == nil then
 				s.gameId = string.format("%d-%d", math.floor((clock() or 0)), math.random(100000, 999999))
@@ -169,10 +199,11 @@ function data()
 				ticketProbe = { error = "ticket_probe.lua not loaded: restart the game application" }
 			end
 
-			local pendingIncome
+			local pendingIncome, pendingMs
 			if pending then
-				local t0 = clock()
+				local t0 = preciseClock()
 				local okPending, result = pcall(pending.compute, api, s, now)
+				pendingMs = elapsedMs(t0)
 				if okPending then
 					result.calib = s.calib
 					pendingIncome = result
@@ -193,7 +224,10 @@ function data()
 				pendingIncome = { error = "pending.lua not loaded: restart the game application" }
 			end
 			state:set(s)
-			local snapshot = export(reason, ticketProbe, pendingIncome, s.gameId)
+			-- cost of the mod: every price event reads and rewrites the saved state, so its size matters
+			local perf = { pendingMs = pendingMs }
+			pcall(function() perf.stateBytes = #json.encode(s) end)
+			local snapshot = export(reason, ticketProbe, pendingIncome, s.gameId, perf)
 			if snapshot and snapshot.health then
 				snapshot.health.t = now
 				s.health = snapshot.health -- read by the GUI (game bar)
@@ -203,16 +237,12 @@ function data()
 
 		-- never returns a value: ticket prices are observed, not modified
 		handleEvent = function(_userParams, state, _src, id, name, param)
-			if probe == nil or (name ~= "OnCalcTicketPrice" and name ~= "OnToArriveAtDestination") then return end
+			if probe == nil or name ~= "OnCalcTicketPrice" then return end
 			pcall(function()
 				local gt = api.engine.getComponent(api.engine.util.getWorld(), api.type.ComponentType.GAME_TIME)
 				local s = state:get() or {}
-				if name == "OnCalcTicketPrice" then
-					local learn = pending and function(detail) pending.learnDelivery(s, detail) end or nil
-					probe.onTicketPrice(api, s, id, param, gt.gameTime, learn)
-				else
-					probe.onArrive(api, s, id, param, gt.gameTime)
-				end
+				local learn = pending and function(detail) pending.learnDelivery(s, detail) end or nil
+				probe.onTicketPrice(api, s, id, param, gt.gameTime, learn)
 				state:set(s)
 			end)
 		end,

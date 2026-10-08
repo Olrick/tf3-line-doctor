@@ -147,6 +147,10 @@ class LuaModTest(unittest.TestCase):
             self.assertEqual(len((Path(tmp) / "history.jsonl").read_text().splitlines()), 1)
             logs = list(self.lua.eval("logLines").values())
             self.assertTrue(any("exported 2 lines" in l for l in logs), logs)
+            snap = json.loads(export.read_text(encoding="utf-8"))
+            self.assertGreater(snap["perf"]["stateBytes"], 0)
+            self.assertTrue(any("export cost" in l for l in logs), logs)
+            self.assertEqual(self.lua.eval("saved.eventSubscriptions"), None)  # the test state cannot subscribe
             self.assertEqual(self.lua.eval("saved.health.worst"), "rouge")  # read by the game bar
 
             # The game runs update() on several threads, each with its own Lua state:
@@ -186,6 +190,7 @@ class LuaModTest(unittest.TestCase):
             r2 = script.handleEvent({{}}, stateObj, "", "SimEntityAtVehicleSystem", "OnCalcTicketPrice", {{
                 {{ vehicleEntity = 11, lineEntity = 100, simEntity = 9100, basePrice = 50, distance = 300 }},
             }})
+            -- no longer subscribed (fired at every arrival): ignored without touching the state
             r3 = script.handleEvent({{}}, stateObj, "", "SimCargoSystem", "OnToArriveAtDestination",
                 {{ entities = {{ {{ 9001, {{ 77, 0 }} }} }} }})
         """)
@@ -201,8 +206,7 @@ class LuaModTest(unittest.TestCase):
         self.assertEqual(coal["name"], "Coal A")
         self.assertIn("journalIncome", coal)
         self.assertEqual(summary["lines"]["100"]["passenger"], 1)
-        self.assertEqual(summary["arrivals"]["cargo"], 1)
-        self.assertEqual(summary["arrivals"]["sampled"][0]["sim"], 9001)
+        self.assertEqual(summary["arrivals"]["cargo"], 0)
         self.assertEqual(len(summary["samples"]), 3)
         chain = summary["chains"][0]                       # 9002: delivered after two lines
         self.assertEqual([seg["line"] for seg in chain["segments"]], [100, 200])
