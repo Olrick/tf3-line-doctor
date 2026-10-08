@@ -148,6 +148,24 @@ def load_snapshots(path: str) -> list[dict]:
     return snaps
 
 
+# exported only once every few months by the mod ("light" exports skip them): carried over from the last full one
+HEAVY_KEYS = ("financeHistory", "infrastructure", "stocks")
+
+
+def carry_heavy(snaps: list[dict]) -> list[dict]:
+    """Fills the slow parts missing from light exports with the previous full export of the same game."""
+    last: dict = {}
+    for snap in snaps:
+        for key in HEAVY_KEYS:
+            if snap.get(key):
+                last[key] = (snap[key], snap.get("gameTime"))
+            elif key in last and snap.get("gameId") == last.get("_game"):
+                snap[key] = last[key][0]
+                snap.setdefault("carriedFrom", {})[key] = last[key][1]
+        last["_game"] = snap.get("gameId")
+    return snaps
+
+
 def load_history(source: str | None) -> list[dict]:
     """All snapshots of the game of the most recent export: the game log is first archived to
     exports/<gameId>/ (one file per export), so history survives game restarts (stdout.txt is reset)."""
@@ -157,8 +175,8 @@ def load_history(source: str | None) -> list[dict]:
         if log:
             game_dir = archive.sync(log)
             if game_dir:
-                return archive.load_game(game_dir)
-    return load_snapshots(source) if source else []
+                return carry_heavy(archive.load_game(game_dir))
+    return carry_heavy(load_snapshots(source)) if source else []
 
 
 def same_game_history(snaps: list[dict]) -> list[dict]:

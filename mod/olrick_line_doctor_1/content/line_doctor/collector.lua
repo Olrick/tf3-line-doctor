@@ -661,10 +661,13 @@ function M.health(ft, company)
 	return out
 end
 
---- Collects the full snapshot.
+--- Collects the snapshot.
 -- @param api the game api table
+-- @param opts optional { light = true }: skip the slow parts that change little from month to month (company
+--   history, building upkeep, stocks); the analyzer carries them over from the last full export
 -- @return a plain lua table ready for json encoding
-function M.collect(api)
+function M.collect(api, opts)
+	local full = not (opts and opts.light)
 	errors = {}
 	local util = api.engine.util
 	local C = api.type.ComponentType
@@ -716,13 +719,14 @@ function M.collect(api)
 
 	snapshot.financeTable = player and try("computeFinanceTable", collectFinanceTable, api, player)
 	-- the whole company history, one column per simulated year (the engine keeps its journal since the start)
-	snapshot.financeHistory = player and try("finance history", collectFinanceTable, api, player, 150, yearTicks)
+	snapshot.financeHistory = full and player and try("finance history", collectFinanceTable, api, player, 150, yearTicks) or nil
 	-- the last 12 months, one column per month (+ the month in progress), for the in-game health check
 	local monthTicks = try("getDefaultMonthDuration", api.util.getDefaultMonthDuration) or (yearTicks / 12)
 	snapshot.financeLast12Months = player and try("finance last 12 months", collectFinanceTable, api, player, 13, monthTicks)
 	snapshot.health = try("health", M.health, snapshot.financeLast12Months, snapshot.company)
-	snapshot.infrastructure = player and try("infrastructure", collectInfrastructure, api, player)
-	snapshot.stocks = try("stocks", collectStocks, api)
+	snapshot.infrastructure = full and player and try("infrastructure", collectInfrastructure, api, player) or nil
+	snapshot.stocks = full and try("stocks", collectStocks, api) or nil
+	snapshot.light = not full or nil
 
 	local stateEnum = try("TransportVehicleState enum", function() return api.type.enum.TransportVehicleState end)
 	local lineSystem = api.engine.system.lineSystem

@@ -332,6 +332,22 @@ class LuaModTest(unittest.TestCase):
         self.assertEqual(w["thrownAway"], 12)
         self.assertEqual(w["pos"][:2], [1300, 3100])
 
+    def test_light_export_and_carry_over(self):
+        light = json.loads(self.lua.eval("""(function()
+            local collector = ug_require("olrick_line_doctor_1::/line_doctor/collector.lua")
+            local json = ug_require("olrick_line_doctor_1::/line_doctor/json.lua")
+            return json.encode(collector.collect(api, { light = true }))
+        end)()"""))
+        self.assertTrue(light["light"])
+        for key in analyze.HEAVY_KEYS:
+            self.assertNotIn(key, light)
+        self.assertIn("health", light)  # the game bar still gets a fresh health every month
+        full = self.collect()
+        full["gameId"] = light["gameId"] = "g"
+        snaps = analyze.carry_heavy([full, light])
+        self.assertEqual(snaps[1]["stocks"], full["stocks"])
+        self.assertEqual(snaps[1]["carriedFrom"]["stocks"], full["gameTime"])
+
     def test_health_projected_at_max_rank(self):
         snap = self.collect()
         h = snap["health"]

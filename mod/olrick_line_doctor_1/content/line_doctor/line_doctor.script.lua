@@ -32,6 +32,8 @@ local REFRESH_REAL_SEC = 300
 -- (an early investigation, unused by the analyzers) fired at every arrival of every passenger and cargo, and each
 -- event reads and rewrites the whole saved state.
 local EVENT_SUBSCRIPTIONS = 2
+-- company history, building upkeep and stocks are exported once every FULL_EVERY monthly exports (and on load)
+local FULL_EVERY = 3
 
 -- wall-clock seconds with millisecond resolution (os.clock is wall time with the Windows C runtime), or nil
 local function preciseClock()
@@ -106,9 +108,9 @@ local function writeToLog(compact)
 	log("LINE_DOCTOR_END")
 end
 
-local function export(reason, ticketProbe, pendingIncome, gameId, perf)
+local function export(reason, ticketProbe, pendingIncome, gameId, perf, light)
 	local t0 = preciseClock()
-	local ok, snapshot = pcall(collector.collect, api)
+	local ok, snapshot = pcall(collector.collect, api, { light = light })
 	local collectMs = elapsedMs(t0)
 	if not ok then
 		log("collect failed: " .. tostring(snapshot))
@@ -133,9 +135,11 @@ local function export(reason, ticketProbe, pendingIncome, gameId, perf)
 		log(string.format("exported %d lines (%d bytes, %d api errors) to %s",
 			#snapshot.lines, #pretty, #snapshot.errors, path))
 	else
+		local tLog = preciseClock()
 		writeToLog(compact)
-		log(string.format("file output unavailable (io=%s, app=%s), exported %d lines to the game log",
-			tostring(io ~= nil), tostring(app ~= nil), #snapshot.lines))
+		log(string.format("file output unavailable (io=%s, app=%s), exported %d lines to the game log (%s bytes, %s ms, %s)",
+			tostring(io ~= nil), tostring(app ~= nil), #snapshot.lines, #compact, tostring(elapsedMs(tLog)),
+			snapshot.light and "light" or "full"))
 	end
 	return snapshot
 end
@@ -227,7 +231,9 @@ function data()
 			-- cost of the mod: every price event reads and rewrites the saved state, so its size matters
 			local perf = { pendingMs = pendingMs }
 			pcall(function() perf.stateBytes = #json.encode(s) end)
-			local snapshot = export(reason, ticketProbe, pendingIncome, s.gameId, perf)
+			s.exportCount = (s.exportCount or 0) + 1
+			local light = reason == "monthly" and s.exportCount % FULL_EVERY ~= 0
+			local snapshot = export(reason, ticketProbe, pendingIncome, s.gameId, perf, light)
 			if snapshot and snapshot.health then
 				snapshot.health.t = now
 				s.health = snapshot.health -- read by the GUI (game bar)
