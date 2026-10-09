@@ -319,6 +319,12 @@ class LuaModTest(unittest.TestCase):
         self.assertIsNotNone(snap)
         self.assertEqual(len(snap["lines"]), 2)
 
+    def test_town_cargo_supply_and_limit(self):
+        towns = self.collect()["towns"]
+        self.assertEqual(towns[0]["id"], 300)
+        self.assertEqual(towns[0]["cargo"]["5"], {"supply": 12, "limit": 40, "extra": 0})
+        self.assertEqual(towns[0]["capacities"]["residential"], 1200)
+
     def test_warehouse_stock_and_flows(self):
         snap = self.collect()
         w = [s for s in snap["stocks"] if s["id"] == 801]

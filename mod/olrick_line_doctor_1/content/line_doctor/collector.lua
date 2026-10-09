@@ -580,6 +580,31 @@ local function collectStocks(api)
 end
 
 -- ---------------------------------------------------------------------------
+-- towns: cargo supply and limit (the percentages of the town window), person capacities
+-- ---------------------------------------------------------------------------
+
+local function collectTowns(api)
+	local tbs = api.engine.system.townBuildingSystem
+	local capacities = try("getTown2personCapacitiesMap", tbs.getTown2personCapacitiesMap) or {}
+	local out = {}
+	for town in pairs(tbs.getTown2BuildingMap()) do
+		local t = { id = num(town), name = try("town name", api.engine.util.getEntityName, town), cargo = {} }
+		pcall(function()
+			local c = capacities[town]
+			if c then t.capacities = { residential = num(c[1]), commercial = num(c[2]), industrial = num(c[3]) } end
+		end)
+		pcall(function()
+			for cargoType, v in pairs(tbs.getCargoSupplyAndLimit(town)) do
+				-- {supply, limit, ?}: the town window shows supply / limit
+				t.cargo[tostring(cargoType)] = { supply = num(v[1]), limit = num(v[2]), extra = num(v[3]) }
+			end
+		end)
+		out[#out + 1] = t
+	end
+	return out
+end
+
+-- ---------------------------------------------------------------------------
 -- health check, shown in the game bar (same thresholds as analyzer/health.py)
 -- ---------------------------------------------------------------------------
 
@@ -726,6 +751,7 @@ function M.collect(api, opts)
 	snapshot.health = try("health", M.health, snapshot.financeLast12Months, snapshot.company)
 	snapshot.infrastructure = full and player and try("infrastructure", collectInfrastructure, api, player) or nil
 	snapshot.stocks = full and try("stocks", collectStocks, api) or nil
+	snapshot.towns = try("towns", collectTowns, api)
 	snapshot.light = not full or nil
 
 	local stateEnum = try("TransportVehicleState enum", function() return api.type.enum.TransportVehicleState end)

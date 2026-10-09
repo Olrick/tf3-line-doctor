@@ -244,6 +244,11 @@ return {
 		system = {
 			vehicleDepotSystem = { forEach = function(fn) end },
 			gameScriptSystem = { getEntityForGameScript = function() return 950 end },
+			townBuildingSystem = {
+				getTown2BuildingMap = function() return { [300] = { 3001, 3002 } } end,
+				getTown2personCapacitiesMap = function() return { [300] = { 1200, 300, 150 } } end,
+				getCargoSupplyAndLimit = function(town) return { [5] = { 12, 40, 0 } } end,
+			},
 			simEntityAtStockSystem = {
 				getStock2SimEntityMap = function() return { [{ 801, 0 }] = { 7001, 7002 } } end,
 				getStockCount = function(e, id) return (e == 801 and id == 0) and 150 or 0 end,
