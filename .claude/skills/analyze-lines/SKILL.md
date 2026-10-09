@@ -76,6 +76,11 @@ de maintenance il descend jusqu'à 0 ; un mauvais état augmente les coûts de f
 **Files d'attente :** `QUEUE` s'appuie sur l'historique des exports du journal (récurrence sur ~2 ans de jeu). Un
 voyage aller 3× plus long que le retour (`ASYMMETRIC_ROUTE`) avec une file = attente au déchargement, pas un détour.
 
+**Lignes voyageurs récentes : la fréquentation monte pendant des années (vérifié en jeu, 1998) :** le RER
+Mulhouse–Menton (3,6 km) perdait −1,9 M/an après 3 ans (79 voyageurs/an, 10 % de remplissage), puis est passé à
++2,1 M/an un an plus tard (404 voyageurs/an, files de 80 à 130). Ne pas conseiller de supprimer une ligne voyageurs
+de moins de ~4 ans sur son seul résultat : regarder la tendance de `transportedPerYear` et de l'attente.
+
 **Lignes de bonus de production (vérifié en jeu, 1951) :** les ouvriers et l'engrais livrés à une industrie augmentent
 sa production (ferme de Lure : ouvriers +57 %, engrais +119 %, affichés dans la fenêtre de l'industrie). Une ligne
 « Ouvriers … » ou « Engrais … » déficitaire se juge sur les recettes des lignes qui expédient la production de
