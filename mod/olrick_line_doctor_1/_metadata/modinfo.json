@@ -1,14 +1,27 @@
 {
+    "name": "Line Doctor",
+    "summary": "Compass and company health (projected to max rank) in the game bar, plus a line diagnostics export.",
+    "description": "Line Doctor helps you understand where your money goes, without changing anything in the game (read-only, cosmetic: achievements stay enabled).\n\nIN THE GAME\n\n- Compass (bottom bar): the direction the camera is looking at (N, NE... NW) and the heading in degrees. North is the map's +y axis.\n\n- Company health (bottom bar): four green / orange / red dots. Hover them for the values and thresholds.\n  1. Income / vehicle running costs (green from 2.0)\n  2. Building upkeep / income (green up to 20 %)\n  3. Vehicle maintenance / income (green up to 9 %)\n  4. Operating result / income (green from 10 %)\n  Health is projected at the maximum company rank: with inflation, ticket prices drop at every promotion while costs never do, so a dot that is green today stays green after every promotion. Computed on the last 12 complete months, subsidies excluded.\n\n- Line window: a Line Doctor card with the pending profit of the line. Cargo is only paid when it reaches its final customer, so a feeder line can look unprofitable while its cargo is still on its way.\n\nANALYSIS WITH CLAUDE (PC)\n\nOnce a month the mod writes a snapshot of your company to the game log: lines, vehicles, finances, building upkeep, warehouse and industry stocks, town demand. The companion analyzers on GitHub (github.com/Olrick/tf3-line-doctor) let Claude Code read it and explain which lines lose money and what to change. This part needs a PC with Python and Claude Code; on consoles only the compass, health and line card are useful.\n\nTexts in English and French, following the game language.",
+    "localization": {
+        "en": {
+            "name": "Line Doctor",
+            "summary": "Compass and company health (projected to max rank) in the game bar, plus a line diagnostics export.",
+            "description": "Line Doctor helps you understand where your money goes, without changing anything in the game (read-only, cosmetic: achievements stay enabled).\n\nIN THE GAME\n\n- Compass (bottom bar): the direction the camera is looking at (N, NE... NW) and the heading in degrees. North is the map's +y axis.\n\n- Company health (bottom bar): four green / orange / red dots. Hover them for the values and thresholds.\n  1. Income / vehicle running costs (green from 2.0)\n  2. Building upkeep / income (green up to 20 %)\n  3. Vehicle maintenance / income (green up to 9 %)\n  4. Operating result / income (green from 10 %)\n  Health is projected at the maximum company rank: with inflation, ticket prices drop at every promotion while costs never do, so a dot that is green today stays green after every promotion. Computed on the last 12 complete months, subsidies excluded.\n\n- Line window: a Line Doctor card with the pending profit of the line. Cargo is only paid when it reaches its final customer, so a feeder line can look unprofitable while its cargo is still on its way.\n\nANALYSIS WITH CLAUDE (PC)\n\nOnce a month the mod writes a snapshot of your company to the game log: lines, vehicles, finances, building upkeep, warehouse and industry stocks, town demand. The companion analyzers on GitHub (github.com/Olrick/tf3-line-doctor) let Claude Code read it and explain which lines lose money and what to change. This part needs a PC with Python and Claude Code; on consoles only the compass, health and line card are useful.\n\nTexts in English and French, following the game language."
+        },
+        "fr": {
+            "name": "Line Doctor",
+            "summary": "Boussole et santé de la compagnie (projetée au rang max) dans la barre du bas, et export d'analyse.",
+            "description": "Line Doctor vous aide à comprendre où part votre argent, sans rien modifier dans le jeu (lecture seule, mod cosmétique : les succès restent actifs).\n\nDANS LE JEU\n\n- Boussole (barre du bas) : la direction vers laquelle regarde la caméra (N, NE... NW) et le cap en degrés. Le nord est l'axe +y de la carte.\n\n- Santé de la compagnie (barre du bas) : quatre points vert / orange / rouge. Survolez-les pour voir les valeurs et les seuils.\n  1. Recettes ÷ fonctionnement des véhicules (vert à partir de 2,0)\n  2. Entretien des bâtiments ÷ recettes (vert jusqu'à 20 %)\n  3. Entretien des véhicules ÷ recettes (vert jusqu'à 9 %)\n  4. Résultat d'exploitation ÷ recettes (vert à partir de 10 %)\n  La santé est projetée au rang maximal de la compagnie : avec l'inflation, le prix des billets baisse à chaque promotion alors que les coûts ne baissent jamais. Un point vert aujourd'hui le reste donc après toutes les promotions. Calcul sur les 12 derniers mois terminés, hors subventions.\n\n- Fenêtre de ligne : une carte Line Doctor indique le profit en attente de la ligne. Une marchandise n'est payée qu'à sa livraison au client final : une ligne d'apport peut sembler déficitaire alors que ses marchandises sont en route.\n\nANALYSE AVEC CLAUDE (PC)\n\nUne fois par mois, le mod écrit dans le journal du jeu un instantané de votre compagnie : lignes, véhicules, finances, entretien des bâtiments, stocks des entrepôts et des usines, demande des villes. Les analyseurs disponibles sur GitHub (github.com/Olrick/tf3-line-doctor) permettent à Claude Code de le lire et d'expliquer quelles lignes perdent de l'argent et quoi changer. Cette partie demande un PC avec Python et Claude Code ; sur console, seuls la boussole, la santé et la carte de ligne sont utiles.\n\nTextes en anglais et en français, selon la langue du jeu."
+        }
+    },
     "authors": [
         {
             "name": "Olrick",
             "role": "CREATOR"
         }
     ],
-    "description": "Exports a read-only snapshot of all lines (finances, capacity, waiting, timings, vehicles) so that an external analyzer can explain why lines lose money.",
-    "name": "Line Doctor",
     "tags": [
-        "Script"
+        "Script Mod"
     ],
     "url": "https://github.com/Olrick/tf3-line-doctor"
 }
